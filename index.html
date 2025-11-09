@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hook React - User Search (Table)</title>
+</head>
+<body>
+    <div id="test"></div>
+    
+    <script type="text/javascript" src="js/react.development.js"></script>
+    <script type="text/javascript" src="js/react-dom.development.js"></script>
+    <script type="text/javascript" src="js/babel.min.js"></script>
+    <script type="text/babel">
+
+        // 创建组件  
+        function UserSearch() {
+            
+            //创建 State (使用 React.useState Hook)
+            const [inputValue, setInputValue] = React.useState('');             
+            const [userData, setUserData] = React.useState(null);             
+            const [message, setMessage] = React.useState('--- 尚未查询 ---');            
+            const [isLoading, setIsLoading] = React.useState(false);
+            // Python API
+            const API_URL = 'http://18.181.172.223:8080/getinfo'; 
+
+            // 事件处理：当输入框变化时
+            const handleInputChange = (event) => {
+                setInputValue(event.target.value);
+            };
+
+            // 事件处理：当点击按钮时 (连接 Python)
+            const handleSearch = () => {
+                if (!inputValue) {
+                    setMessage('请输入 User ID 后再检索');
+                    return;
+                }
+
+                console.log('开始检索, 传入的值:', inputValue);
+                setIsLoading(true);
+                setUserData(null);  
+                setMessage('检索中...'); // 设置提示信息
+
+                // 使用 fetch API 调用Python 后端
+                fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json' 
+                    },
+                    body: JSON.stringify({ userid: inputValue }) 
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('网络响应错误: ' + response.statusText);
+                    }
+                    return response.json(); // 解析 JSON
+                })
+                .then(data => {
+                    console.log('从 Python 收到:', data);
+                    if (data.status === true) {
+                        
+                        // 将*对象*存入 userData】
+                        setUserData(data.data);  
+                        setMessage('');  
+
+                    } else {                       
+                        setMessage('查询失败: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Fetch 失败:', error);                    
+                    setMessage('检索失败: ' + error.message + ' (请确认Python服务已在8080端口运行)');
+                })
+                .finally(() => {
+                    setIsLoading(false); 
+                });
+            };
+
+            // 5. 返回 JSX
+            return (
+                <div>
+                    <h2>用户查询</h2>
+                    
+                    <input 
+                        type="text"
+                        value={inputValue} 
+                        onChange={handleInputChange} 
+                        placeholder="请输入 User ID"
+                        disabled={isLoading}
+                    />&nbsp;
+                    
+                    <button onClick={handleSearch} disabled={isLoading}>
+                        {isLoading ? '检索中...' : '检索'}
+                    </button>
+                    
+                    <hr />
+                    
+                    <h3>检索结果:</h3>                                   
+                    
+                    {userData ? (
+                        <table style={{ width: '600px', margin: '20px 0',borderCollapse: 'collapse', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', borderRadius: '8px', overflow: 'hidden'}}>
+                            <tbody>                                
+                                <tr>
+                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee', width: '150px' }}>
+                                        <strong style={{ fontWeight: '600', color: '#111' }}>User ID</strong>
+                                    </td>
+                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee', color: '#333' }}>{userData.user_id}</td>
+                                </tr>
+                                <tr>
+                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee' }}>
+                                        <strong style={{ fontWeight: '600', color: '#111' }}>User Name</strong>
+                                    </td>
+                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee', color: '#333' }}>{userData.user_name}</td>
+                                </tr>
+                                <tr>
+                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee' }}>
+                                        <strong style={{ fontWeight: '600', color: '#111' }}>Email</strong>
+                                    </td>
+                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee', color: '#333' }}>{userData.email}</td>
+                                </tr>
+                                <tr>
+                                    <td style={{ padding: '14px 16px' }}>
+                                        <strong style={{ fontWeight: '600', color: '#111' }}>Created Date</strong>
+                                    </td>
+                                    <td style={{ padding: '14px 16px', color: '#333' }}>{userData.creation_date}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    ) : (
+                        <p>{message}</p>
+                    )}
+
+                </div>
+            );
+        }
+
+        // 渲染组件到页面
+        ReactDOM.render(<UserSearch/>,document.getElementById('test'))
+    </script>
+</body>
+</html>
