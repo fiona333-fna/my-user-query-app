@@ -300,6 +300,13 @@ resource "aws_lb_target_group_attachment" "api_tg_attach" {
 resource "aws_apigatewayv2_api" "api" {
   name          = "Project-User-Service-API"
   protocol_type = "HTTP"
+  target        = aws_apigatewayv2_vpc_link.api_vpc_link.arn
+  cors_configuration {
+
+    allow_origins = ["*"] 
+    allow_methods = ["*"]        
+    allow_headers = ["*"] 
+  }
 }
 
 resource "aws_apigatewayv2_integration" "api_integration" {
