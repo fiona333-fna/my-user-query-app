@@ -1,13 +1,13 @@
 import pymysql
 from flask import Flask, request, jsonify, session
 from dbutils.pooled_db import PooledDB
-from flask_cors import CORS
+#from flask_cors import CORS
 from pymysql.cursors import DictCursor
 import os
 
 app = Flask(__name__)
 #启动CORES允许所有来源
-CORS(app)
+#CORS(app)
 
 DB_HOST = os.environ.get('DB_HOST')
 DB_USER = os.environ.get('DB_USER')

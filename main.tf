@@ -245,7 +245,7 @@ resource "aws_instance" "web_server" {
     sudo yum install python3-pip git -y
     
     # 3. Install Python Flask
-    sudo pip3 install flask pymysql dbutils
+    sudo pip3 install flask pymysql dbutils flask-cors
     
     # 4. Create nginx configure file
     sudo tee /etc/nginx/conf.d/flask_proxy.conf > /dev/null <<'EOT'
