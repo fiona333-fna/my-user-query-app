@@ -31,8 +31,7 @@ resource "aws_internet_gateway" "gw" {
     }
 }
 
-# Create two subnets
-# EC2(Public subnet) + RDS(Private Subnet)
+# Create three subnets
 
 resource "aws_subnet" "public_subnet" {
 
@@ -235,34 +234,53 @@ resource "aws_instance" "web_server" {
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
   associate_public_ip_address = false
 
-  # Nginx, Python/Flask, a Gunicorn-u i CORS
   user_data = <<-EOF
     #!/bin/bash
-    sudo amazon-linux-extras install nginx1 -y
-    sudo yum install python3-pip -y
-    sudo pip3 install flask
-    sudo tee /etc/nginx/conf.d/flask_proxy.conf > /dev/null <<'EOT'
+    set -e 
 
+    # 1. Install Nginx
+    sudo amazon-linux-extras install nginx1 -y
+    
+    # 2. Install Python 3, pip,git
+    sudo yum install python3-pip git -y
+    
+    # 3. Install Python Flask
+    sudo pip3 install flask pymysql dbutils
+    
+    # 4. Create nginx configure file
+    sudo tee /etc/nginx/conf.d/flask_proxy.conf > /dev/null <<'EOT'
 server {
     listen 80;
     server_name _;
+    
+    location = / {
+        proxy_pass http://127.0.0.1:8080; 
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
-    location / {
+    # API Gateway "prod" 
+    # --------------------------------
+    # (/prod/getinfo  ->   /getinfo)
+    location /prod/ {
         # --- CORS Preflight (OPTIONS) Handling ---
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' '*';
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, HEAD';
             add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token';
             add_header 'Access-Control-Max-Age' 1728000;
-            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Type' 'text/plain; charset-utf-8';
             add_header 'Content-Length' 0;
             return 204;
         }
-
         # --- Actual Request Handling ---
         add_header 'Access-Control-Allow-Origin' '*' always;
         
-        proxy_pass http://127.0.0.1:8080; 
+        # /prod/getinfo -> /getinfo
+        proxy_pass http://127.0.0.1:8080/; 
+        
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -272,28 +290,14 @@ server {
 EOT
 
     sudo mkdir -p /opt/app
-    sudo tee /opt/app/app.py > /dev/null <<'EOT'
-from flask import Flask, jsonify
+    sudo chown ec2-user:ec2-user /opt/app 
 
-app = Flask(__name__)
-
-@app.route('/')
-def hello():
-     return "Hello, the backend is working!"
-
-@app.route('/getinfo', methods=['GET', 'POST']) 
-def get_info():
-     response = {
-         "message": "Success! You are connected to the Python backend.",
-         "data": [
-             {"id": 1, "name": "Item A"},
-             {"id": 2, "name": "Item B"}
-         ]
-     }
-     return jsonify(response)
-
-if (__name__ == '__main__'):   
-     app.run(host='0.0.0.0', port=8080)
+    # DB Info
+    sudo tee /etc/myapp.conf > /dev/null <<EOT
+DB_HOST=${aws_db_instance.default.address}
+DB_USER=${aws_db_instance.default.username}
+DB_PASS=${var.db_password}
+DB_NAME=${aws_db_instance.default.db_name}
 EOT
 
     sudo tee /etc/systemd/system/myapp.service > /dev/null <<'EOT'
@@ -305,23 +309,25 @@ After=network.target
 User=ec2-user
 Group=ec2-user
 WorkingDirectory=/opt/app
+EnvironmentFile=/etc/myapp.conf
 ExecStart=/usr/bin/python3 app.py
 Restart=always 
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 EOT
 
-    sudo systemctl daemon-reload      
-    sudo systemctl start myapp.service   
-    sudo systemctl enable myapp.service  
-    
-    sudo systemctl start nginx         
-    sudo systemctl enable nginx        
+    # 8. Start Nginx 
+    sudo systemctl daemon-reload
+    sudo systemctl start nginx
+    sudo systemctl enable nginx
+    sudo systemctl enable myapp.service 
   EOF
 
   tags = { Name = "Python-API-Server" }
-  
+
+  depends_on = [aws_db_instance.default]
 }
 
 # Create VPC Link
