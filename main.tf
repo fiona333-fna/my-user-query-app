@@ -226,27 +226,102 @@ data "aws_ami" "amazon_linux_2" {
     }
 }
 
-# Create EC2 Instance
-
+# Create EC2 Instance (user_data)
 resource "aws_instance" "web_server" {
-    ami           = data.aws_ami.amazon_linux_2.id
-    instance_type = "t3.micro" 
-    subnet_id = aws_subnet.private_subnet.id        
-    vpc_security_group_ids = [aws_security_group.web_sg.id] 
-    iam_instance_profile = aws_iam_instance_profile.ec2_profile.name 
+  ami                         = data.aws_ami.amazon_linux_2.id
+  instance_type               = "t3.micro"
+  subnet_id                   = aws_subnet.private_subnet.id
+  vpc_security_group_ids      = [aws_security_group.web_sg.id]
+  iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
+  associate_public_ip_address = false
 
-    associate_public_ip_address = false 
+  # Nginx, Python/Flask, a Gunicorn-u i CORS
+  user_data = <<-EOF
+    #!/bin/bash
+    sudo amazon-linux-extras install nginx1 -y
+    sudo yum install python3-pip -y
+    sudo pip3 install flask
+    sudo tee /etc/nginx/conf.d/flask_proxy.conf > /dev/null <<'EOT'
+
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        # --- CORS Preflight (OPTIONS) Handling ---
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' '*';
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, HEAD';
+            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token';
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+
+        # --- Actual Request Handling ---
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        
+        proxy_pass http://127.0.0.1:8080; 
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOT
+
+    sudo mkdir -p /opt/app
+    sudo tee /opt/app/app.py > /dev/null <<'EOT'
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+     return "Hello, the backend is working!"
+
+@app.route('/getinfo', methods=['GET', 'POST']) 
+def get_info():
+     response = {
+         "message": "Success! You are connected to the Python backend.",
+         "data": [
+             {"id": 1, "name": "Item A"},
+             {"id": 2, "name": "Item B"}
+         ]
+     }
+     return jsonify(response)
+
+if (__name__ == '__main__'):   
+     app.run(host='0.0.0.0', port=8080)
+EOT
+
+    sudo tee /etc/systemd/system/myapp.service > /dev/null <<'EOT'
+[Unit]
+Description=My Python Flask App
+After=network.target
+
+[Service]
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/app
+ExecStart=/usr/bin/python3 app.py
+Restart=always 
+
+[Install]
+WantedBy=multi-user.target
+EOT
+
+    sudo systemctl daemon-reload      
+    sudo systemctl start myapp.service   
+    sudo systemctl enable myapp.service  
     
-    # Nginx
-    user_data = <<-EOF
-        #!/bin/bash
-        sudo yum install nginx -y
-        echo 'server { listen 80; location / { proxy_pass http://127.0.0.1:8080; } }' | sudo tee /etc/nginx/conf.d/flask_proxy.conf
-        sudo systemctl start nginx
-        sudo systemctl enable nginx
-    EOF
-    
-    tags = { Name = "Python-API-Server" }
+    sudo systemctl start nginx         
+    sudo systemctl enable nginx        
+  EOF
+
+  tags = { Name = "Python-API-Server" }
+  
 }
 
 # Create VPC Link
@@ -302,13 +377,7 @@ resource "aws_lb_target_group_attachment" "api_tg_attach" {
 # Create API Gateway REST API
 resource "aws_apigatewayv2_api" "api" {
     name          = "Project-User-Service-API"
-    protocol_type = "HTTP"
-    cors_configuration {
-
-        allow_origins = ["*"] 
-        allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"]        
-        allow_headers = ["Content-Type", "Authorization", "X-Amz-Date", "X-Api-Key", "X-Amz-Security-Token"]        
-    }
+    protocol_type = "HTTP"    
 }
 
 resource "aws_apigatewayv2_integration" "api_integration" {
