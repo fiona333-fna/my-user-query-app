@@ -138,8 +138,11 @@ resource "aws_security_group" "web_sg" {
     ingress {
         from_port   = 80
         to_port     = 80
-        protocol    = "tcp"
-        cidr_blocks = [aws_vpc.main.cidr_block]  
+        protocol    = "tcp"        
+        cidr_blocks = [
+        aws_subnet.private_subnet.cidr_block,
+        aws_subnet.private_subnet_2.cidr_block
+        ]  
     }
 
     # Egress rule
@@ -298,13 +301,13 @@ resource "aws_lb_target_group_attachment" "api_tg_attach" {
 
 # Create API Gateway REST API
 resource "aws_apigatewayv2_api" "api" {
-        name          = "Project-User-Service-API"
+    name          = "Project-User-Service-API"
     protocol_type = "HTTP"
+    cors_configuration {
 
-    cors_configuration {        
-    allow_origins = ["http://my-unique-user-query-app-fiona.s3-website-ap-northeast-1.amazonaws.com"]        
-    allow_methods = ["POST", "OPTIONS"]
-    allow_headers = ["Content-Type"]
+        allow_origins = ["*"] 
+        allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"]        
+        allow_headers = ["Content-Type", "Authorization", "X-Amz-Date", "X-Api-Key", "X-Amz-Security-Token"]        
     }
 }
 
@@ -318,9 +321,9 @@ resource "aws_apigatewayv2_integration" "api_integration" {
     payload_format_version = "1.0"
 }
 
-resource "aws_apigatewayv2_route" "getinfo_route" {
+resource "aws_apigatewayv2_route" "default_route" {
     api_id    = aws_apigatewayv2_api.api.id
-    route_key = "POST /getinfo"  
+    route_key = "$default" 
     target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
 }
 
@@ -328,7 +331,7 @@ resource "aws_apigatewayv2_stage" "api_stage" {
     api_id      = aws_apigatewayv2_api.api.id
     name        = "prod"
     auto_deploy = true
-    depends_on = [ aws_apigatewayv2_route.getinfo_route ]
+    depends_on = [ aws_apigatewayv2_route.default_route ]
 }
 
 # RDS subnet
