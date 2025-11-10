@@ -42,6 +42,10 @@ def fetchOne(sql,parmas):
     conn.close()
     return result
 
+@app.route('/', methods=['GET'])
+def health_check():
+    return "Backend Status: Healthy", 200
+
 @app.route('/getinfo',methods=['POST'])
 def getinfo():
     # Check Userid
