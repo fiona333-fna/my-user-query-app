@@ -491,7 +491,6 @@ resource "aws_s3_object" "js_files" {
   key    = "js/${each.value}"
   source = "${path.module}/js/${each.value}"
   content_type = "application/javascript"
-  acl    = "public-read"
 }
 
 resource "aws_s3_bucket_website_configuration" "frontend_website" {
