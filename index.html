@@ -84,7 +84,7 @@
           return (
             <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-lg">
               {icon}
-              <p className={`text-sm font-medium ${messageClass}`}>{message}</p>
+              <p className={`text-sm font-medium $${messageClass}`}>{message}</p>
             </div>
           );
         }
@@ -161,7 +161,7 @@
                        return response.json().then(err => { throw new Error(err.error || '用户未找到'); });
                     }
                     if (!response.ok) {
-                        throw new Error(`网络响应错误: ${response.status} ${response.statusText}`);
+                        throw new Error(`网络响应错误: $${response.status} $${response.statusText}`);
                     }
                     return response.json();
                 })
@@ -172,12 +172,12 @@
                         setMessage('');
                     } else {
                         // 捕获 app.py 返回的 {status: false} 错误
-                        setMessage(`查询失败: ${data.error}`);
+                        setMessage(`查询失败: $${data.error}`);
                     }
                 })
                 .catch(error => {
                     console.error('Fetch 失败:', error);
-                    setMessage(`检索失败: ${error.message}`);
+                    setMessage(`检索失败: $${error.message}`);
                 })
                 .finally(() => {
                     setIsLoading(false);

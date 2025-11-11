@@ -472,22 +472,15 @@ resource "aws_s3_bucket_public_access_block" "frontend_bucket_pac" {
     restrict_public_buckets = false
 }
 
-# Read index.html.tpl template
-data "template_file" "frontend_html" {
-  template = file("${path.module}/index.html")
-  
-  vars = {
-    api_url = aws_apigatewayv2_stage.api_stage.invoke_url
-  }
-}
-
+# Load index.html to S3
 resource "aws_s3_object" "frontend_index" {
   bucket = aws_s3_bucket.frontend_bucket.id
   key    = "index.html"
-  content = data.template_file.frontend_html.rendered 
+  content = templatefile("${path.module}/index.html", {
+    api_url = aws_apigatewayv2_stage.api_stage.invoke_url
+  })
   
   content_type = "text/html"
-  acl          = "public-read" 
   depends_on = [aws_apigatewayv2_stage.api_stage]
 }
 
