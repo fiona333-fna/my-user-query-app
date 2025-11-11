@@ -132,7 +132,7 @@
             const [isLoading, setIsLoading] = React.useState(false);
             
             // API_URL (由 Terraform 注入)
-            const API_URL = "${api_url}/prod/getinfo"; 
+            const API_URL = "${api_url}/getinfo";
 
             const handleInputChange = (event) => {
                 setInputValue(event.target.value);
