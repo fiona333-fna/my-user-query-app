@@ -241,29 +241,28 @@ resource "aws_instance" "web_server" {
     # 1. Install Nginx
     sudo amazon-linux-extras install nginx1 -y
     
-    # 2. Install Python 3, pip,git
-    sudo yum install python3-pip git -y
+    # 2. Install Python 3, pip, git, python
+    sudo yum install python3-pip git mysql -y
     
-    # 3. Install Python Flask
-    sudo pip3 install flask pymysql dbutils flask-cors
+    # 3. Install flask
+    sudo pip3 install flask pymysql dbutils
     
-    # 4. Create nginx configure file
+    # 4. Create Nignx configure
     sudo tee /etc/nginx/conf.d/flask_proxy.conf > /dev/null <<'EOT'
 server {
     listen 80;
     server_name _;
-    
+
+    # A. NLB check
     location = / {
-        proxy_pass http://127.0.0.1:8080; 
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # API Gateway "prod" 
-    # --------------------------------
-    # (/prod/getinfo  ->   /getinfo)
+    # B. API Gateway "prod" 
     location /prod/ {
         # --- CORS Preflight (OPTIONS) Handling ---
         if ($request_method = 'OPTIONS') {
@@ -289,17 +288,18 @@ server {
 }
 EOT
 
+    # 5. create path
     sudo mkdir -p /opt/app
-    sudo chown ec2-user:ec2-user /opt/app 
-
-    # DB Info
+    
+    # 6. DB Environment
     sudo tee /etc/myapp.conf > /dev/null <<EOT
 DB_HOST=${aws_db_instance.default.address}
 DB_USER=${aws_db_instance.default.username}
 DB_PASS=${var.db_password}
 DB_NAME=${aws_db_instance.default.db_name}
 EOT
-
+    
+    # 7. Create systemd Logfile
     sudo tee /etc/systemd/system/myapp.service > /dev/null <<'EOT'
 [Unit]
 Description=My Python Flask App
@@ -318,11 +318,18 @@ RestartSec=10
 WantedBy=multi-user.target
 EOT
 
-    # 8. Start Nginx 
+    # 8. Clone
+    sudo git clone https://github.com/fiona333-fna/my-user-query-app.git /opt/app
+
+    # 9. User Chown
+    sudo chown -R ec2-user:ec2-user /opt/app
+
+    # 10. Start services
     sudo systemctl daemon-reload
     sudo systemctl start nginx
     sudo systemctl enable nginx
     sudo systemctl enable myapp.service 
+    sudo systemctl start myapp.service 
   EOF
 
   tags = { Name = "Python-API-Server" }
@@ -406,6 +413,9 @@ resource "aws_apigatewayv2_stage" "api_stage" {
     api_id      = aws_apigatewayv2_api.api.id
     name        = "prod"
     auto_deploy = true
+    tags = {
+    LastBackendInstanceID = aws_instance.web_server.id
+    }
     depends_on = [ aws_apigatewayv2_route.default_route ]
 }
 
@@ -462,12 +472,41 @@ resource "aws_s3_bucket_public_access_block" "frontend_bucket_pac" {
     restrict_public_buckets = false
 }
 
-resource "aws_s3_bucket_website_configuration" "frontend_website" {
-    bucket = aws_s3_bucket.frontend_bucket.id
+# Read index.html.tpl template
+data "template_file" "frontend_html" {
+  template = file("${path.module}/index.html")
+  
+  vars = {
+    api_url = aws_apigatewayv2_stage.api_stage.invoke_url
+  }
+}
 
-    index_document {
-        suffix = "index.html"
-    }
+resource "aws_s3_object" "frontend_index" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+  key    = "index.html"
+  content = data.template_file.frontend_html.rendered 
+  
+  content_type = "text/html"
+  acl          = "public-read" 
+  depends_on = [aws_apigatewayv2_stage.api_stage]
+}
+
+resource "aws_s3_object" "js_files" {
+  for_each = fileset("${path.module}/js", "*.js")
+  
+  bucket = aws_s3_bucket.frontend_bucket.id
+  key    = "js/${each.value}"
+  source = "${path.module}/js/${each.value}"
+  content_type = "application/javascript"
+  acl    = "public-read"
+}
+
+resource "aws_s3_bucket_website_configuration" "frontend_website" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  index_document {
+    suffix = "index.html"
+  }
 }
 
 # S3 Policy

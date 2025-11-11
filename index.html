@@ -1,140 +1,245 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Hook React - User Search (Table)</title>
-</head>
-<body>
-    <div id="test"></div>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户数据查询系统</title>
+    <!-- 1. 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- 2. 引入 Google Font 字体 (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- 3. 引入 React 和 Babel -->
     <script type="text/javascript" src="js/react.development.js"></script>
     <script type="text/javascript" src="js/react-dom.development.js"></script>
     <script type="text/javascript" src="js/babel.min.js"></script>
+    
+    <!-- 4. 自定义字体样式 -->
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+    <!-- 顶部导航栏 -->
+    <nav class="bg-gray-800 text-white shadow-md">
+      <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <div class="flex items-center">
+            <svg class="h-8 w-8 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.25 2.25v3.86a2.25 2.25 0 0 0 2.25 2.25h3.86a2.25 2.25 0 0 0 2.25-2.25v-3.86a2.25 2.25 0 0 1 2.25-2.25h3.86m-16.5 0a2.25 2.25 0 0 0-2.25 2.25v3.86a2.25 2.25 0 0 1-2.25 2.25H2.25m16.5 0a2.25 2.25 0 0 1 2.25 2.25v3.86a2.25 2.25 0 0 0 2.25 2.25h3.86a2.25 2.25 0 0 0 2.25-2.25v-3.86a2.25 2.25 0 0 0-2.25-2.25h-3.86m-16.5 0h3.86a2.25 2.25 0 0 1 2.25 2.25v3.86a2.25 2.25 0 0 0 2.25 2.25h3.86a2.25 2.25 0 0 0 2.25-2.25v-3.86a2.25 2.25 0 0 1 2.25-2.25h3.86m0-3.86a2.25 2.25 0 0 0-2.25-2.25h-3.86a2.25 2.25 0 0 1-2.25-2.25V6.086a2.25 2.25 0 0 0-2.25-2.25h-3.86a2.25 2.25 0 0 0-2.25 2.25v3.86a2.25 2.25 0 0 1-2.25 2.25H2.25m0-3.86a2.25 2.25 0 0 1-2.25-2.25V6.086a2.25 2.25 0 0 1 2.25-2.25h3.86a2.25 2.25 0 0 1 2.25 2.25v3.86a2.25 2.25 0 0 0 2.25 2.25h3.86a2.25 2.25 0 0 0 2.25-2.25V6.086a2.25 2.25 0 0 1 2.25-2.25h3.86a2.25 2.25 0 0 1 2.25 2.25v3.86a2.25 2.25 0 0 0 2.25 2.25h3.86a2.25 2.25 0 0 0 2.25-2.25V6.086a2.25 2.25 0 0 0-2.25-2.25h-3.86a2.25 2.25 0 0 1-2.25-2.25V2.25A2.25 2.25 0 0 0 15.75 0h-3.86a2.25 2.25 0 0 0-2.25 2.25v3.86a2.25 2.25 0 0 1-2.25 2.25H3.56a2.25 2.25 0 0 0-2.25 2.25v3.86A2.25 2.25 0 0 0 3.56 13.5h3.86a2.25 2.25 0 0 0 2.25-2.25v-3.86a2.25 2.25 0 0 1 2.25-2.25h3.86a2.25 2.25 0 0 1 2.25 2.25v3.86a2.25 2.25 0 0 0 2.25 2.25h3.86Z" />
+            </svg>
+            <h1 class="text-xl font-semibold ml-2">用户数据查询 </h1>
+          </div>
+        </div>
+      </div>
+    </nav>
+    
+    <!-- 5. React 挂载点 -->
+    <main class="flex-grow flex items-center justify-center p-4">
+        <div id="root-container" class="w-full max-w-md"></div>
+    </main>
+    
+    <!-- 6. React (Babel) 脚本 -->
     <script type="text/babel">
 
-        // 创建组件  
-        function UserSearch() {
-            
-            //创建 State (使用 React.useState Hook)
-            const [inputValue, setInputValue] = React.useState('');             
-            const [userData, setUserData] = React.useState(null);             
-            const [message, setMessage] = React.useState('--- 尚未查询 ---');            
-            const [isLoading, setIsLoading] = React.useState(false);
-            // Python API
-            const API_URL = 'https://bkso1q6cm5.execute-api.ap-northeast-1.amazonaws.com/prod/getinfo'; 
+        // --- 子组件：加载中的骨架屏 ---
+        function LoadingSkeleton() {
+          return (
+            <div className="border border-gray-200 rounded-lg p-6 animate-pulse">
+              <div className="flex items-center space-x-4">
+                <div className="rounded-full bg-gray-200 h-12 w-12"></div>
+                <div className="flex-1 space-y-3 py-1">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              </div>
+              <div className="space-y-4 mt-8">
+                <div className="h-3 bg-gray-200 rounded"></div>
+                <div className="h-3 bg-gray-200 rounded"></div>
+              </div>
+            </div>
+          );
+        }
 
-            // 事件处理：当输入框变化时
+        // --- 子组件：错误/信息提示 ---
+        function StatusMessage({ message }) {
+          const isError = message.includes('失败') || message.includes('错误');
+          const isSuccess = message.includes('成功');
+
+          const icon = isError ? (
+            <svg className="h-10 w-10 text-red-400 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+          ) : null;
+
+          const messageClass = isError 
+                ? 'text-red-600' 
+                : 'text-gray-500';
+
+          return (
+            <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-lg">
+              {icon}
+              <p className={`text-sm font-medium ${messageClass}`}>{message}</p>
+            </div>
+          );
+        }
+
+        // --- 子组件：用户信息卡片 ---
+        function UserProfileCard({ user }) {
+          return (
+            <div className="border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+              <div className="p-6 bg-white">
+                <div className="flex items-center space-x-4">
+                  <div className="flex-shrink-0">
+                    <span className="inline-flex items-center justify-center h-14 w-14 rounded-full bg-blue-100 text-blue-600">
+                      <svg className="h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A1.5 1.5 0 0 1 18 21.75H6a1.5 1.5 0 0 1-1.499-1.632Z" />
+                      </svg>
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xl font-bold text-gray-900 truncate">{user.user_name}</p>
+                    <p className="text-sm text-gray-500 truncate">{user.email}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="border-t border-gray-200 bg-gray-50 px-6 py-4">
+                <dl className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+                  <div className="sm:col-span-1">
+                    <dt className="text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{user.user_id}</dd>
+                  </div>
+                  <div className="sm:col-span-1">
+                    <dt className="text-xs font-medium text-gray-500 uppercase tracking-wider">Created Date</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{user.creation_date}</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          );
+        }
+
+        // --- 主应用组件 ---
+        function UserSearch() {
+            const [inputValue, setInputValue] = React.useState('');
+            const [userData, setUserData] = React.useState(null);
+            const [message, setMessage] = React.useState('请输入用户 ID 进行查询');
+            const [isLoading, setIsLoading] = React.useState(false);
+            
+            // API_URL (由 Terraform 注入)
+            const API_URL = "${api_url}/prod/getinfo"; 
+
             const handleInputChange = (event) => {
                 setInputValue(event.target.value);
             };
 
-            // 事件处理：当点击按钮时 (连接 Python)
             const handleSearch = () => {
                 if (!inputValue) {
                     setMessage('请输入 User ID 后再检索');
                     return;
                 }
 
-                console.log('开始检索, 传入的值:', inputValue);
+                console.log('开始检索:', API_URL, '参数:', inputValue);
                 setIsLoading(true);
-                setUserData(null);  
-                setMessage('检索中...'); // 设置提示信息
+                setUserData(null);
+                setMessage('正在从数据库检索...');
 
-                // 使用 fetch API 调用Python 后端
                 fetch(API_URL, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json' 
+                        'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ userid: inputValue }) 
+                    body: JSON.stringify({ userid: inputValue })
                 })
                 .then(response => {
-                    if (!response.ok) {
-                        throw new Error('网络响应错误: ' + response.statusText);
+                    if (response.status === 404) {
+                       return response.json().then(err => { throw new Error(err.error || '用户未找到'); });
                     }
-                    return response.json(); // 解析 JSON
+                    if (!response.ok) {
+                        throw new Error(`网络响应错误: ${response.status} ${response.statusText}`);
+                    }
+                    return response.json();
                 })
                 .then(data => {
-                    console.log('从 Python 收到:', data);
+                    console.log('从后端收到:', data);
                     if (data.status === true) {
-                        
-                        // 将*对象*存入 userData】
-                        setUserData(data.data);  
-                        setMessage('');  
-
-                    } else {                       
-                        setMessage('查询失败: ' + data.error);
+                        setUserData(data.data);
+                        setMessage('');
+                    } else {
+                        // 捕获 app.py 返回的 {status: false} 错误
+                        setMessage(`查询失败: ${data.error}`);
                     }
                 })
                 .catch(error => {
-                    console.error('Fetch 失败:', error);                    
-                    setMessage('检索失败: ' + error.message + ' (请确认Python服务已在8080端口运行)');
+                    console.error('Fetch 失败:', error);
+                    setMessage(`检索失败: ${error.message}`);
                 })
                 .finally(() => {
-                    setIsLoading(false); 
+                    setIsLoading(false);
                 });
             };
 
-            // 5. 返回 JSX
             return (
-                <div>
-                    <h2>用户查询</h2>
+                <div className="bg-white p-6 sm:p-8 rounded-xl shadow-2xl w-full max-w-md">
                     
-                    <input 
-                        type="text"
-                        value={inputValue} 
-                        onChange={handleInputChange} 
-                        placeholder="请输入 User ID"
-                        disabled={isLoading}
-                    />&nbsp;
+                    {/* 标题 */}
+                    <div className="flex items-center space-x-3 mb-6">
+                        <svg className="h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                        </svg>
+                        <h2 className="text-2xl font-bold text-gray-800">用户查询</h2>
+                    </div>
                     
-                    <button onClick={handleSearch} disabled={isLoading}>
-                        {isLoading ? '检索中...' : '检索'}
-                    </button>
+                    {/* 输入框和按钮 */}
+                    <div className="flex rounded-md shadow-sm">
+                        <input
+                            type="text"
+                            value={inputValue}
+                            onChange={handleInputChange}
+                            placeholder="请输入 User ID (例如: 101)"
+                            disabled={isLoading}
+                            className="flex-grow w-full px-4 py-3 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                        />
+                        <button
+                            onClick={handleSearch}
+                            disabled={isLoading}
+                            className="relative inline-flex items-center justify-center space-x-2 bg-blue-600 text-white px-5 py-3 rounded-r-md font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition duration-150 ease-in-out"
+                            style={{ minWidth: '100px' }} // 确保按钮在加载时宽度不变
+                        >
+                            {isLoading ? (
+                                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            ) : (
+                                <span>检索</span>
+                            )}
+                        </button>
+                    </div>
                     
-                    <hr />
+                    {/* 结果区域 */}
+                    <div className="mt-8">
+                        <h3 className="text-lg font-semibold text-gray-700 border-b pb-2 mb-4">检索结果</h3>
+                        {isLoading ? (
+                            <LoadingSkeleton />
+                        ) : userData ? (
+                            <UserProfileCard user={userData} />
+                        ) : (
+                            <StatusMessage message={message} />
+                        )}
+                    </div>
                     
-                    <h3>检索结果:</h3>                                   
-                    
-                    {userData ? (
-                        <table style={{ width: '600px', margin: '20px 0',borderCollapse: 'collapse', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', borderRadius: '8px', overflow: 'hidden'}}>
-                            <tbody>                                
-                                <tr>
-                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee', width: '150px' }}>
-                                        <strong style={{ fontWeight: '600', color: '#111' }}>User ID</strong>
-                                    </td>
-                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee', color: '#333' }}>{userData.user_id}</td>
-                                </tr>
-                                <tr>
-                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee' }}>
-                                        <strong style={{ fontWeight: '600', color: '#111' }}>User Name</strong>
-                                    </td>
-                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee', color: '#333' }}>{userData.user_name}</td>
-                                </tr>
-                                <tr>
-                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee' }}>
-                                        <strong style={{ fontWeight: '600', color: '#111' }}>Email</strong>
-                                    </td>
-                                    <td style={{ padding: '14px 16px', borderBottom: '1px solid #eee', color: '#333' }}>{userData.email}</td>
-                                </tr>
-                                <tr>
-                                    <td style={{ padding: '14px 16px' }}>
-                                        <strong style={{ fontWeight: '600', color: '#111' }}>Created Date</strong>
-                                    </td>
-                                    <td style={{ padding: '14px 16px', color: '#333' }}>{userData.creation_date}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    ) : (
-                        <p>{message}</p>
-                    )}
-
                 </div>
             );
         }
 
         // 渲染组件到页面
-        ReactDOM.render(<UserSearch/>,document.getElementById('test'))
+        ReactDOM.render(<UserSearch/>, document.getElementById('root-container'));
     </script>
 </body>
 </html>
