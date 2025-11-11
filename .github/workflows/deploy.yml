@@ -1,0 +1,68 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 Menlo-Regular;}
+{\colortbl;\red255\green255\blue255;\red109\green115\blue120;\red23\green24\blue24;\red202\green202\blue202;
+\red54\green192\blue160;\red113\green192\blue131;}
+{\*\expandedcolortbl;;\cssrgb\c50196\c52549\c54510;\cssrgb\c11765\c12157\c12549;\cssrgb\c83137\c83137\c83137;
+\cssrgb\c23922\c78824\c69020;\cssrgb\c50588\c78824\c58431;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs28 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 # \uc0\u21629 \u21517 \u20026  deploy.yml\cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf5 \cb3 \strokec5 name\cf4 \strokec4 : \cf6 \strokec6 Deploy Fullstack App to AWS\cf4 \cb1 \strokec4 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf2 \cb3 \strokec2 # 1. \uc0\u35302 \u21457 \u22120 \u65306 \cf4 \cb1 \strokec4 \
+\cf2 \cb3 \strokec2 # \uc0\u24403  'main' \u20998 \u25903 \u26377 \u26032 \u30340  push \u26102 \u33258 \u21160 \u36816 \u34892 \cf4 \cb1 \strokec4 \
+\pard\pardeftab720\partightenfactor0
+\cf5 \cb3 \strokec5 on\cf4 \strokec4 :\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf4 \cb3   \cf5 \strokec5 push\cf4 \strokec4 :\cb1 \
+\cb3     \cf5 \strokec5 branches\cf4 \strokec4 :\cb1 \
+\cb3       - \cf6 \strokec6 main\cf4 \cb1 \strokec4 \
+\
+\pard\pardeftab720\partightenfactor0
+\cf5 \cb3 \strokec5 jobs\cf4 \strokec4 :\cb1 \
+\pard\pardeftab720\partightenfactor0
+\cf4 \cb3   \cf5 \strokec5 deploy\cf4 \strokec4 :\cb1 \
+\cb3     \cf5 \strokec5 runs-on\cf4 \strokec4 : \cf6 \strokec6 ubuntu-latest\cf4 \strokec4  \cf2 \strokec2 # \uc0\u20351 \u29992  GitHub \u25552 \u20379 \u30340  Linux \u26381 \u21153 \u22120  (\u27809 \u26377  Mac \u23433 \u20840 \u24377 \u31383 )\cf4 \cb1 \strokec4 \
+\cb3     \cb1 \
+\cb3     \cf2 \strokec2 # \uc0\u20801 \u35768 \u27492 \u20316 \u19994 \u21521  AWS \u20889 \u20837 \cf4 \cb1 \strokec4 \
+\cb3     \cf5 \strokec5 permissions\cf4 \strokec4 :\cb1 \
+\cb3       \cf5 \strokec5 id-token\cf4 \strokec4 : \cf6 \strokec6 write\cf4 \cb1 \strokec4 \
+\cb3       \cf5 \strokec5 contents\cf4 \strokec4 : \cf6 \strokec6 read\cf4 \cb1 \strokec4 \
+\
+\cb3     \cf5 \strokec5 steps\cf4 \strokec4 :\cb1 \
+\cb3       \cf2 \strokec2 # 2. \uc0\u27493 \u39588 \u19968 \u65306 \u26816 \u20986 \u20195 \u30721 \cf4 \cb1 \strokec4 \
+\cb3       \cf2 \strokec2 # \uc0\u25226 \u24744 \u20179 \u24211 \u20013 \u30340 \u25152 \u26377 \u25991 \u20214  (main.tf, index.html, js/) \u19979 \u36733 \u21040 \u36816 \u34892 \u22120 \u19978 \cf4 \cb1 \strokec4 \
+\cb3       - \cf5 \strokec5 name\cf4 \strokec4 : \cf6 \strokec6 Checkout repository\cf4 \cb1 \strokec4 \
+\cb3         \cf5 \strokec5 uses\cf4 \strokec4 : \cf6 \strokec6 actions/checkout@v3\cf4 \cb1 \strokec4 \
+\
+\cb3       \cf2 \strokec2 # 3. \uc0\u27493 \u39588 \u20108 \u65306 \u37197 \u32622  AWS \u20973 \u35777 \cf4 \cb1 \strokec4 \
+\cb3       \cf2 \strokec2 # \uc0\u23427 \u20250 \u20351 \u29992 \u24744 \u22312  GitHub Secrets \u20013 \u35774 \u32622 \u30340 \u23494 \u38053 \cf4 \cb1 \strokec4 \
+\cb3       - \cf5 \strokec5 name\cf4 \strokec4 : \cf6 \strokec6 Configure AWS Credentials\cf4 \cb1 \strokec4 \
+\cb3         \cf5 \strokec5 uses\cf4 \strokec4 : \cf6 \strokec6 aws-actions/configure-aws-credentials@v4\cf4 \cb1 \strokec4 \
+\cb3         \cf5 \strokec5 with\cf4 \strokec4 :\cb1 \
+\cb3           \cf5 \strokec5 aws-access-key-id\cf4 \strokec4 : \cf6 \strokec6 $\{\{ secrets.AWS_ACCESS_KEY_ID \}\}\cf4 \cb1 \strokec4 \
+\cb3           \cf5 \strokec5 aws-secret-access-key\cf4 \strokec4 : \cf6 \strokec6 $\{\{ secrets.AWS_SECRET_ACCESS_KEY \}\}\cf4 \cb1 \strokec4 \
+\cb3           \cf5 \strokec5 aws-region\cf4 \strokec4 : \cf6 \strokec6 ap-northeast-1\cf4 \strokec4  \cf2 \strokec2 # \uc0\u20351 \u29992 \u24744 \u30340  AWS \u21306 \u22495 \cf4 \cb1 \strokec4 \
+\
+\cb3       \cf2 \strokec2 # 4. \uc0\u27493 \u39588 \u19977 \u65306 \u23433 \u35013  Terraform\cf4 \cb1 \strokec4 \
+\cb3       - \cf5 \strokec5 name\cf4 \strokec4 : \cf6 \strokec6 Setup Terraform\cf4 \cb1 \strokec4 \
+\cb3         \cf5 \strokec5 uses\cf4 \strokec4 : \cf6 \strokec6 hashicorp/setup-terraform@v2\cf4 \cb1 \strokec4 \
+\cb3         \cf5 \strokec5 with\cf4 \strokec4 :\cb1 \
+\cb3           \cf5 \strokec5 terraform_version\cf4 \strokec4 : \cf6 \strokec6 "1.5.0"\cf4 \strokec4  \cf2 \strokec2 # \uc0\u24744 \u21487 \u20197 \u20351 \u29992 \u19968 \u20010 \u20855 \u20307 \u30340 \u29256 \u26412 \cf4 \cb1 \strokec4 \
+\
+\cb3       \cf2 \strokec2 # 5. \uc0\u27493 \u39588 \u22235 \u65306 \u36816 \u34892  Terraform (\u21021 \u22987 \u21270 \u21644 \u37096 \u32626 )\cf4 \cb1 \strokec4 \
+\cb3       - \cf5 \strokec5 name\cf4 \strokec4 : \cf6 \strokec6 Terraform Init\cf4 \cb1 \strokec4 \
+\cb3         \cf5 \strokec5 run\cf4 \strokec4 : \cf6 \strokec6 terraform init\cf4 \cb1 \strokec4 \
+\
+\cb3       - \cf5 \strokec5 name\cf4 \strokec4 : \cf6 \strokec6 Terraform Apply\cf4 \cb1 \strokec4 \
+\cb3         \cf5 \strokec5 run\cf4 \strokec4 : \cf6 \strokec6 terraform apply -auto-approve\cf4 \cb1 \strokec4 \
+\cb3         \cf2 \strokec2 # \uc0\u20851 \u38190 \u65306 \u25105 \u20204 \u20174  GitHub Secrets \u20013 \u33719 \u21462 \u25968 \u25454 \u24211 \u23494 \u30721 \cf4 \cb1 \strokec4 \
+\cb3         \cf2 \strokec2 # \uc0\u24182 \u23558 \u20854 \u20316 \u20026 \u29615 \u22659 \u21464 \u37327 \u20256 \u36882 \u32473  Terraform\cf4 \cb1 \strokec4 \
+\cb3         \cf5 \strokec5 env\cf4 \strokec4 :\cb1 \
+\cb3           \cf5 \strokec5 TF_VAR_db_password\cf4 \strokec4 : \cf6 \strokec6 $\{\{ secrets.DB_PASSWORD \}\}\cf4 \cb1 \strokec4 \
+}
