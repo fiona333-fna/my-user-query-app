@@ -1,4 +1,4 @@
-name: AWS CI/CD Pipeline (替代 Jenkins)
+name: AWS CI/CD Pipeline
 
 on:
   push:
@@ -83,39 +83,51 @@ jobs:
         env:
           DB_PASS: ${{ secrets.DB_PASSWORD }}
         run: |
-          echo "Setting up SSH key..."
-          echo "${{ secrets.EC2_SSH_KEY_PEM }}" > deploy_key.pem
-          chmod 600 deploy_key.pem
+          echo "Running DB Migration using AWS Systems Manager (SSM)..."
           
-          echo "Getting EC2 Private IP..."
-          INSTANCE_IP=$(aws ec2 describe-instances --instance-ids $EC2_INSTANCE_ID --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
+          # Transfer schema.sql content to /tmp/schema.sql on EC2
+          SCHEMA_SQL_BASE64=$(cat schema.sql | base64)
           
-          echo "Copying schema.sql to $INSTANCE_IP..."
-          scp -i deploy_key.pem -o StrictHostKeyChecking=no schema.sql ec2-user@$INSTANCE_IP:/tmp/schema.sql
-          
-          echo "Running DB Migration on $INSTANCE_IP..."
-          ssh -i deploy_key.pem -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP \
-            "mysql -h $DB_HOST_ADDRESS -u admin -p'$DB_PASS' user_service_db < /tmp/schema.sql"
-          
-          rm deploy_key.pem
+          echo "Transferring schema.sql to EC2..."
+          aws ssm send-command \
+            --instance-ids $EC2_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --comment "Transfer schema.sql for DB Migration" \
+            --parameters "commands=[\"echo '$SCHEMA_SQL_BASE64' | base64 -d > /tmp/schema.sql\"]" \
+            --output text
+
+          # Execute DB migration script on EC2 via SSM
+          echo "Executing DB migration script on EC2..."
+          aws ssm send-command \
+            --instance-ids $EC2_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --comment "Execute DB Migration" \
+            --parameters "commands=[\"mysql -h $DB_HOST_ADDRESS -u admin -p'$DB_PASS' user_service_db < /tmp/schema.sql\"]" \
+            --output text
 
       - name: Deploy Application (Backend)
         run: |
-          echo "Setting up SSH key..."
-          echo "${{ secrets.EC2_SSH_KEY_PEM }}" > deploy_key.pem
-          chmod 600 deploy_key.pem
+          echo "Deploying app.py and restarting service using AWS Systems Manager (SSM)..."
           
-          echo "Getting EC2 Private IP..."
-          INSTANCE_IP=$(aws ec2 describe-instances --instance-ids $EC2_INSTANCE_ID --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
-
-          echo "Copying app.py to $INSTANCE_IP..."
-          scp -i deploy_key.pem -o StrictHostKeyChecking=no app.py ec2-user@$INSTANCE_IP:/opt/app/app.py
+          # Transfer app.py content to /opt/app/app.py on EC2
+          APP_PY_BASE64=$(cat app.py | base64)
           
-          echo "Restarting application service on $INSTANCE_IP..."
-          ssh -i deploy_key.pem -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP \
-            "sudo systemctl restart myapp.service"
+          echo "Copying app.py to EC2..."
+          aws ssm send-command \
+            --instance-ids $EC2_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --comment "Transfer app.py" \
+            --parameters "commands=[\"echo '$APP_PY_BASE64' | base64 -d > /opt/app/app.py\"]" \
+            --output text
           
-          rm deploy_key.pem
+          # Restart application service on EC2 via SSM
+          echo "Restarting application service on EC2..."
+          aws ssm send-command \
+            --instance-ids $EC2_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart myapp.service" \
+            --parameters 'commands=["sudo systemctl restart myapp.service"]' \
+            --output text
       
       - name: Deploy Application (Frontend)
         run: |
