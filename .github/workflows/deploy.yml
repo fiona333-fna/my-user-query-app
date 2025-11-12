@@ -1,38 +1,24 @@
-# 此文件应保存在您 Git 仓库的 .github/workflows/deploy.yml 路径下
-
 name: AWS CI/CD Pipeline (替代 Jenkins)
 
-# 1. 触发器：当代码推送到 main 分支时
 on:
   push:
     branches:
       - main
-  workflow_dispatch: # 允许您在 GitHub 网页上手动触发
+  workflow_dispatch:
 
-# 2. 权限：授予 workflow 访问 AWS OIDC 和读取代码的权限
 permissions:
-  id-token: write   # 用于 AWS OIDC 身份验证 (即使不用 OIDC 也最好保留)
-  contents: read    # 用于 actions/checkout
+  id-token: write
+  contents: read
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest # 使用 GitHub 托管的、资源充足的 Linux 机器
-    environment: production # 可选，用于管理环境秘密
+    runs-on: ubuntu-latest
+    environment: production
 
     steps:
-      # 3. 检出代码
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 4. 配置 AWS 凭证 (OIDC 方式 - 已禁用)
-      #    您需要在 AWS IAM 中创建一个 OIDC 角色
-      # - name: Configure AWS Credentials
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }} # AWS_OIDC_ROLE_ARN 是您需要在 GitHub Secrets 中创建的
-      #     aws-region: ap-northeast-1
-      
-      # --- 或者, 如果您不想设置 OIDC, 请注释掉上面, 使用下面这个 (不推荐) ---
       - name: Configure AWS Credentials (Access Key)
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -40,45 +26,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-1
       
-      # 5. 【替代 Jenkins 工具】安装所有依赖
       - name: Install Tools (Terraform, jq, mysql)
         run: |
-          # 安装 Terraform (使用 hashicorp 官方 action)
-          # (这等同于 Jenkins 的 'tools' 块)
           echo "Installing Terraform..."
-          # 使用更可靠的 hashicorp/setup-terraform action
-          # gh release download --repo hashicorp/terraform --pattern "*_linux_amd64.zip" --output terraform.zip
-          # unzip terraform.zip
-          # sudo mv terraform /usr/local/bin/
-          # rm terraform.zip
-          # terraform --version
         
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.8.0" # 您可以指定版本
+          terraform_version: "1.8.0"
           
       - name: Install Other Tools
         run: |
-          # 安装其他工具 (aws-cli, jq, mysql-client)
-          # (这等同于 Docker 'apk add')
           echo "Installing other tools..."
           sudo apt-get update
-          sudo apt-get install -y awscli jq mysql-client
-          
-          # 验证安装
+          sudo apt-get install -y jq mysql-client
+          sudo apt-get install -y python3-pip
+          sudo pip3 install awscli
           echo "Validating tools..."
           aws --version
           jq --version
           mysql --version
 
-      # 6. 【Provision 阶段】运行 Terraform
       - name: Terraform Init
         run: |
-          rm -rf .terraform .terraform.lock.hcl # 清理旧缓存
+          rm -rf .terraform .terraform.lock.hcl
           terraform init
         env:
-          # 从 GitHub Secrets 注入数据库密码
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
 
       - name: Terraform Plan
@@ -91,11 +64,9 @@ jobs:
         env:
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
 
-      # 7. 【获取输出】为后续步骤准备环境变量
       - name: Get Terraform Outputs
         id: tf-outputs
         run: |
-          # 从 terraform state 获取输出, 存入 GITHUB_ENV
           echo "DB_HOST_ADDRESS=$(terraform output -raw database_address)" >> $GITHUB_ENV
           
           S3_BUCKET_NAME=$(terraform state show -no-color aws_s3_bucket.frontend_bucket | grep -o 'bucket = "[^"]*"' | cut -d'"' -f2)
@@ -108,13 +79,11 @@ jobs:
           echo "S3 Bucket: $S3_BUCKET_NAME"
           echo "EC2 Instance ID: $EC2_INSTANCE_ID"
 
-      # 8. 【DB Migration 阶段】
       - name: DB Migration
         env:
           DB_PASS: ${{ secrets.DB_PASSWORD }}
         run: |
           echo "Setting up SSH key..."
-          # 从 GitHub Secret 创建 SSH 私钥文件
           echo "${{ secrets.EC2_SSH_KEY_PEM }}" > deploy_key.pem
           chmod 600 deploy_key.pem
           
@@ -130,7 +99,6 @@ jobs:
           
           rm deploy_key.pem
 
-      # 9. 【Deploy Backend 阶段】
       - name: Deploy Application (Backend)
         run: |
           echo "Setting up SSH key..."
@@ -149,7 +117,6 @@ jobs:
           
           rm deploy_key.pem
       
-      # 10. 【Deploy Frontend 阶段】
       - name: Deploy Application (Frontend)
         run: |
           echo "Syncing frontend files to S3 bucket: $S3_BUCKET_NAME..."
