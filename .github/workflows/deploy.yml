@@ -68,12 +68,8 @@ jobs:
         id: tf-outputs
         run: |
           echo "DB_HOST_ADDRESS=$(terraform output -raw database_address)" >> $GITHUB_ENV
-          
-          S3_BUCKET_NAME=$(terraform state show -no-color aws_s3_bucket.frontend_bucket | grep -o 'bucket = "[^"]*"' | cut -d'"' -f2)
-          echo "S3_BUCKET_NAME=$S3_BUCKET_NAME" >> $GITHUB_ENV
-          
-          EC2_INSTANCE_ID=$(terraform state show -no-color aws_instance.web_server | grep -o 'id = "[^"]*"' | head -n1 | cut -d'"' -f2)
-          echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID" >> $GITHUB_ENV
+          echo "S3_BUCKET_NAME=$(terraform output -raw s3_bucket_name)" >> $GITHUB_ENV
+          echo "EC2_INSTANCE_ID=$(terraform output -raw ec2_instance_id)" >> $GITHUB_ENV
           
           echo "--- Outputs Set ---"
           echo "S3 Bucket: $S3_BUCKET_NAME"
