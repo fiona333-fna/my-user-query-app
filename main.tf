@@ -1,5 +1,15 @@
 # AWS Provider
 terraform {
+  # S3 backend for storing Terraform state
+  # You must manually create this S3 bucket
+  backend "s3" {
+    bucket         = "fiona-terraform-state-bucket-12345" # <-- Ensure you replace this with your own S3 bucket
+    key            = "global/terraform.tfstate"
+    region         = "ap-northeast-1"
+    dynamodb_table = "terraform-state-lock"               # <-- Ensure you created this DynamoDB table
+    encrypt        = true
+  }
+
   required_providers {
     aws = {
         source  = "hashicorp/aws"
@@ -32,9 +42,7 @@ resource "aws_internet_gateway" "gw" {
 }
 
 # Create three subnets
-
 resource "aws_subnet" "public_subnet" {
-
     vpc_id                  = aws_vpc.main.id
     cidr_block              = "10.0.1.0/24"
     availability_zone       = "ap-northeast-1a" 
@@ -82,7 +90,7 @@ resource "aws_route_table_association" "public_rt_assoc" {
     route_table_id = aws_route_table.public_rt.id
 }
 
-# Create　EIP for NAT Gateway
+# Create EIP for NAT Gateway
 resource "aws_eip" "nat" {
     depends_on = [aws_internet_gateway.gw] 
     tags = { Name = "Project-NAT-EIP" }
@@ -126,8 +134,7 @@ resource "aws_route_table_association" "private_rt_assoc_2" {
 }
 
 
-# Create Security Group for EC2 （防火墙）
-
+# Create Security Group for EC2
 resource "aws_security_group" "web_sg" {
     name        = "web-security-group"
     description = "Allow internal traffic from API Gateway on port 80"
@@ -143,6 +150,15 @@ resource "aws_security_group" "web_sg" {
         aws_subnet.private_subnet_2.cidr_block
         ]  
     }
+    
+    # Ingress rule to allow SSH from GitHub Actions
+    ingress {
+        from_port   = 22
+        to_port     = 22
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"] # NOTE: This is open for the demo. Should be restricted in production.
+    }
+
 
     # Egress rule
     egress {
@@ -157,7 +173,7 @@ resource "aws_security_group" "web_sg" {
     }
 }
 
-# Create Security Group for RDS （防火墙）
+# Create Security Group for RDS
 resource "aws_security_group" "db_sg" {
     name        = "db-security-group"
     description = "Allow MySQL traffic only from EC2"
@@ -233,8 +249,9 @@ resource "aws_instance" "web_server" {
   vpc_security_group_ids      = [aws_security_group.web_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
   associate_public_ip_address = false
-  key_name = "jenkins-deploy-key"
+  key_name = "jenkins-deploy-key" # <-- IMPORTANT: Ensure this key pair exists in your AWS account
 
+  # user_data no longer contains git clone or service start
   user_data = <<-EOF
     #!/bin/bash
     set -e 
@@ -319,12 +336,15 @@ RestartSec=10
 WantedBy=multi-user.target
 EOT
 
+    # 9. User Chown
     sudo chown -R ec2-user:ec2-user /opt/app
 
+    # 10. Start services
     sudo systemctl daemon-reload
     sudo systemctl start nginx
     sudo systemctl enable nginx
-    sudo systemctl enable myapp.service
+    sudo systemctl enable myapp.service 
+    # 'start myapp.service' is removed, will be triggered by CI/CD pipeline
   EOF
 
   tags = { Name = "Python-API-Server" }
@@ -448,7 +468,7 @@ resource "aws_db_instance" "default" {
 }
 
 
-# S3 static html （React）
+# S3 static html
 resource "aws_s3_bucket" "frontend_bucket" {
   
     bucket = "my-unique-user-query-app-fiona" 
@@ -467,7 +487,7 @@ resource "aws_s3_bucket_public_access_block" "frontend_bucket_pac" {
     restrict_public_buckets = false
 }
 
-
+# S3 object resources are removed, CI/CD pipeline will handle uploads
 resource "aws_s3_bucket_website_configuration" "frontend_website" {
   bucket = aws_s3_bucket.frontend_bucket.id
 
@@ -512,4 +532,15 @@ output "backend_api_url" {
 output "database_address" {
     description = "The hostname of the RDS (MySQL) database. Use this in Python."
     value       = aws_db_instance.default.address
+}
+
+# Added outputs to fix the pipeline errors
+output "ec2_instance_id" {
+  description = "The ID of the EC2 instance running the backend app"
+  value       = aws_instance.web_server.id
+}
+
+output "s3_bucket_name" {
+  description = "The name of the S3 bucket for the frontend"
+  value       = aws_s3_bucket.frontend_bucket.bucket
 }
