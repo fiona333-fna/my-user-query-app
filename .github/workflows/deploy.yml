@@ -70,10 +70,12 @@ jobs:
           echo "DB_HOST_ADDRESS=$(terraform output -raw database_address)" >> $GITHUB_ENV
           echo "S3_BUCKET_NAME=$(terraform output -raw s3_bucket_name)" >> $GITHUB_ENV
           echo "EC2_INSTANCE_ID=$(terraform output -raw ec2_instance_id)" >> $GITHUB_ENV
+          echo "API_GATEWAY_URL=$(terraform output -raw backend_api_url)" >> $GITHUB_ENV
           
           echo "--- Outputs Set ---"
           echo "S3 Bucket: $S3_BUCKET_NAME"
           echo "EC2 Instance ID: $EC2_INSTANCE_ID"
+          echo "API Gateway URL: $API_GATEWAY_URL"
 
       - name: DB Migration
         env:
@@ -128,4 +130,15 @@ jobs:
       - name: Deploy Application (Frontend)
         run: |
           echo "Syncing frontend files to S3 bucket: $S3_BUCKET_NAME..."
-          aws s3 sync . s3://$S3_BUCKET_NAME --exclude "*" --include "index.html" --include "js/*"
+          
+          # Replace ${api_url} placeholder in index.html with the actual API Gateway URL
+          sed "s|${api_url}|$API_GATEWAY_URL|g" index.html > index_temp.html
+          
+          # Upload the rendered index.html file
+          aws s3 cp index_temp.html s3://$S3_BUCKET_NAME/index.html --content-type "text/html"
+          
+          # Upload all js files
+          aws s3 sync . s3://$S3_BUCKET_NAME --exclude "*" --include "js/*"
+
+          # Clean up temporary file
+          rm index_temp.html
