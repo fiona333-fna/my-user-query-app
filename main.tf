@@ -233,6 +233,7 @@ resource "aws_instance" "web_server" {
   vpc_security_group_ids      = [aws_security_group.web_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
   associate_public_ip_address = false
+  key_name = "jenkins-deploy-key"
 
   user_data = <<-EOF
     #!/bin/bash
@@ -318,18 +319,12 @@ RestartSec=10
 WantedBy=multi-user.target
 EOT
 
-    # 8. Clone
-    sudo git clone https://github.com/fiona333-fna/my-user-query-app.git /opt/app
-
-    # 9. User Chown
     sudo chown -R ec2-user:ec2-user /opt/app
 
-    # 10. Start services
     sudo systemctl daemon-reload
     sudo systemctl start nginx
     sudo systemctl enable nginx
-    sudo systemctl enable myapp.service 
-    sudo systemctl start myapp.service 
+    sudo systemctl enable myapp.service
   EOF
 
   tags = { Name = "Python-API-Server" }
@@ -472,26 +467,6 @@ resource "aws_s3_bucket_public_access_block" "frontend_bucket_pac" {
     restrict_public_buckets = false
 }
 
-# Load index.html to S3
-resource "aws_s3_object" "frontend_index" {
-  bucket = aws_s3_bucket.frontend_bucket.id
-  key    = "index.html"
-  content = templatefile("${path.module}/index.html", {
-    api_url = aws_apigatewayv2_stage.api_stage.invoke_url
-  })
-  
-  content_type = "text/html"
-  depends_on = [aws_apigatewayv2_stage.api_stage]
-}
-
-resource "aws_s3_object" "js_files" {
-  for_each = fileset("${path.module}/js", "*.js")
-  
-  bucket = aws_s3_bucket.frontend_bucket.id
-  key    = "js/${each.value}"
-  source = "${path.module}/js/${each.value}"
-  content_type = "application/javascript"
-}
 
 resource "aws_s3_bucket_website_configuration" "frontend_website" {
   bucket = aws_s3_bucket.frontend_bucket.id
