@@ -35,18 +35,23 @@ jobs:
         with:
           terraform_version: "1.8.0"
           
-      - name: Install Other Tools
+      - name: Install Other Tools and Flyway
         run: |
+          echo "Installing other tools and Flyway..."
           sudo apt-get update
-          # 仅安装 Runner 上需要的基础工具和 zip
-          sudo apt-get install -y jq mysql-client 
-          sudo apt-get install -y python3-pip zip
-          sudo pip3 install awscli
+          sudo apt-get install -y jq mysql-client default-jre
           
+          # Install Flyway CLI
+          FLYWAY_VERSION="9.22.3"
+          wget -qO- "https://download.red-gate.com/flyway/community/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz" | tar xvz
+          sudo mv flyway-$FLYWAY_VERSION/flyway /usr/local/bin/flyway
+          
+          sudo apt-get install -y python3-pip
+          sudo pip3 install awscli
           echo "Validating tools..."
           aws --version
           jq --version
-          mysql --version
+          flyway -version
 
       - name: Terraform Init
         run: |
@@ -78,36 +83,19 @@ jobs:
           echo "EC2 Instance ID: $EC2_INSTANCE_ID"
           echo "API Gateway URL: $API_GATEWAY_URL"
 
-      - name: DB Migration (Remote Flyway)
+      - name: DB Migration (using Flyway on Runner)
         env:
           DB_PASS: ${{ secrets.DB_PASSWORD }}
-          DB_HOST: ${{ env.DB_HOST_ADDRESS }}
-          DB_NAME: user_service_db
         run: |
-          echo "Running remote DB Migration using Flyway via SSM..."
+          echo "Running Flyway migration on GitHub Runner..."
           
-          # 1. Zip the migration folder (from Runner's filesystem)
-          zip -r flyway_migrations.zip db/migration/
-          
-          # 2. Transfer the zip file to EC2 using SSM 
-          FLYWAY_MIGRATIONS_BASE64=$(cat flyway_migrations.zip | base64)
-          
-          echo "Transferring migration files to EC2..."
-          aws ssm send-command \
-            --instance-ids $EC2_INSTANCE_ID \
-            --document-name "AWS-RunShellScript" \
-            --comment "Transfer Flyway files" \
-            --parameters "commands=[\"echo '$FLYWAY_MIGRATIONS_BASE64' | base64 -d > /tmp/migrations.zip\", \"unzip -o /tmp/migrations.zip -d /opt/flyway/sql/\", \"rm /tmp/migrations.zip\"]" \
-            --output text
-
-          # 3. Execute Flyway migrate command REMOTELY on EC2 via SSM 
-          echo "Executing Flyway migrate command on EC2..."
-          aws ssm send-command \
-            --instance-ids $EC2_INSTANCE_ID \
-            --document-name "AWS-RunShellScript" \
-            --comment "Execute Flyway Migration" \
-            --parameters "commands=[\"sudo /opt/flyway/flyway -url='jdbc:mysql://${DB_HOST}:3306/${DB_NAME}' -user='admin' -password='${DB_PASS}' -locations=filesystem:/opt/flyway/sql/db/migration migrate\"]" \
-            --output text
+          # IMPORTANT: You must ensure your SQL files are in a directory named 'sql/'
+          # and named correctly, e.g., 'sql/V1__initial_schema.sql'.
+          flyway -url="jdbc:mysql://$DB_HOST_ADDRESS:3306/user_service_db" \
+                 -user=admin \
+                 -password='${{ secrets.DB_PASSWORD }}' \
+                 -locations=filesystem:sql \
+                 migrate
 
       - name: Deploy Application (Backend)
         run: |
@@ -126,7 +114,6 @@ jobs:
           
           # Restart application service on EC2 via SSM
           echo "Restarting application service on EC2..."
-          # ⭐️ FIX: 确保命令正确转义，避免 'command not found'
           aws ssm send-command \
             --instance-ids $EC2_INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
@@ -138,14 +125,18 @@ jobs:
         run: |
           echo "Syncing frontend files to S3 bucket: $S3_BUCKET_NAME..."
           
-          # 1. Replace ${api_url} placeholder in index.html with the actual API Gateway URL
-          sed "s|\${api_url}|$API_GATEWAY_URL|g" index.html > index_temp.html
+          # 1. 确保 API Gateway URL 中的特殊字符（如斜杠/）被转义，以便安全地用于 sed 命令。
+          # 使用printf和sed来转义所有&和/符号，并将结果存储在 SAFE_API_URL 变量中
+          SAFE_API_URL=$(printf '%s\n' "$API_GATEWAY_URL" | sed 's/[&/]/\\&/g')
           
-          # 2. Upload the rendered index.html file
+          # 2. 使用 # 作为分隔符，并使用 SAFE_API_URL 替换 ${api_url}
+          sed "s#\${api_url}#$SAFE_API_URL#g" index.html > index_temp.html
+          
+          # 3. Upload the rendered index.html file
           aws s3 cp index_temp.html s3://$S3_BUCKET_NAME/index.html --content-type "text/html"
           
-          # 3. Upload all js files
+          # 4. Upload all js files
           aws s3 sync . s3://$S3_BUCKET_NAME --exclude "*" --include "js/*"
 
-          # 4. Clean up temporary file
+          # 5. Clean up temporary file
           rm index_temp.html
