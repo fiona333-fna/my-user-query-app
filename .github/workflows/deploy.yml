@@ -26,7 +26,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-1
       
-      - name: Install Tools (Terraform, jq, mysql, Flyway) # Renamed step for clarity
+      - name: Install Tools (Terraform, jq, mysql, Flyway)
         run: |
           echo "Installing Terraform..."
         
@@ -38,7 +38,7 @@ jobs:
       - name: Install Other Tools
         run: |
           sudo apt-get update
-          # Added default-jre as it was missing, causing the class error
+          # 安装 Flyway 依赖的 Java 环境
           sudo apt-get install -y jq mysql-client default-jre 
           sudo apt-get install -y python3-pip
           sudo pip3 install awscli
@@ -50,6 +50,7 @@ jobs:
           echo "Installing Flyway to ${INSTALL_DIR}..."
           curl -L -o flyway.tar.gz https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz
           sudo mkdir -p ${INSTALL_DIR}
+          # 解压 Flyway 到指定目录
           sudo tar -xzf flyway.tar.gz -C ${INSTALL_DIR} --strip-components=1
           rm flyway.tar.gz
           # ------------------------------------
@@ -58,6 +59,8 @@ jobs:
           aws --version
           jq --version
           mysql --version
+          # 验证 Flyway 是否安装成功
+          /opt/flyway/flyway -v
 
       - name: Terraform Init
         run: |
@@ -97,16 +100,10 @@ jobs:
         run: |
           echo "Running DB Migration using Flyway..."
           
-          # Prepare Flyway directory structure and files
-          # Note: We must create the db/migration folder
+          # 1. 确保 Flyway 目录存在 (包含 V1.0__.sql, V1.1__.sql 等文件)
           mkdir -p db/migration/
           
-          # Move and rename schema.sql into the V1.0 structure file
-          # This is the single, initial migration file
-          mv schema.sql db/migration/V1.0__Initial_Setup.sql
-
-          # Execute Flyway migrate command using the full path to the executable
-          # This avoids the ClassNotFoundException by running Flyway from its proper structure
+          # 2. 核心执行 Flyway migrate 命令，直接连接 RDS
           /opt/flyway/flyway -url="jdbc:mysql://${DB_HOST}:3306/${DB_NAME}" \
                              -user="admin" \
                              -password="${DB_PASS}" \
