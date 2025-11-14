@@ -38,6 +38,7 @@ jobs:
       - name: Install Other Tools
         run: |
           sudo apt-get update
+          # 仅安装 Runner 上需要的基础工具和 zip
           sudo apt-get install -y jq mysql-client 
           sudo apt-get install -y python3-pip zip
           sudo pip3 install awscli
@@ -85,7 +86,7 @@ jobs:
         run: |
           echo "Running remote DB Migration using Flyway via SSM..."
           
-          # 1. Zip the migration folder
+          # 1. Zip the migration folder (from Runner's filesystem)
           zip -r flyway_migrations.zip db/migration/
           
           # 2. Transfer the zip file to EC2 using SSM 
@@ -125,10 +126,11 @@ jobs:
           
           # Restart application service on EC2 via SSM
           echo "Restarting application service on EC2..."
+          # ⭐️ FIX: 确保命令正确转义，避免 'command not found'
           aws ssm send-command \
             --instance-ids $EC2_INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart myapp.service"
+            --comment "Restart myapp.service" \
             --parameters 'commands=["sudo systemctl restart myapp.service"]' \
             --output text
       
