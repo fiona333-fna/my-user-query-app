@@ -1,12 +1,11 @@
 # AWS Provider
 terraform {
   # S3 backend for storing Terraform state
-  # You must manually create this S3 bucket
   backend "s3" {
-    bucket         = "fiona-terraform-state-bucket-12345" # <-- Ensure you replace this with your own S3 bucket
+    bucket         = "fiona-terraform-state-bucket-12345" 
     key            = "global/terraform.tfstate"
     region         = "ap-northeast-1"
-    dynamodb_table = "terraform-state-lock"               # <-- Ensure you created this DynamoDB table
+    dynamodb_table = "terraform-state-lock"               
     encrypt        = true
   }
 
@@ -249,7 +248,7 @@ resource "aws_instance" "web_server" {
   vpc_security_group_ids      = [aws_security_group.web_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
   associate_public_ip_address = false
-  key_name = "jenkins-deploy-key" # <-- IMPORTANT: Ensure this key pair exists in your AWS account
+  key_name = "jenkins-deploy-key"
 
   # user_data no longer contains git clone or service start
   user_data = <<-EOF

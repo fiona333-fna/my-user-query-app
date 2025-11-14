@@ -37,15 +37,23 @@ jobs:
           
       - name: Install Other Tools
         run: |
-          echo "Installing other tools..."
           sudo apt-get update
-          sudo apt-get install -y jq mysql-client
+          sudo apt-get install -y jq mysql-client default-jre 
           sudo apt-get install -y python3-pip
           sudo pip3 install awscli
+          
+          # Install Flyway CLI
+          FLYWAY_VERSION="9.22.3"
+          curl -L -O https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz
+          tar -xzf flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz
+          sudo mv flyway-${FLYWAY_VERSION}/flyway /usr/local/bin/flyway
+          rm -rf flyway-${FLYWAY_VERSION} flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz
+          
           echo "Validating tools..."
           aws --version
           jq --version
           mysql --version
+          flyway -v
 
       - name: Terraform Init
         run: |
@@ -80,28 +88,24 @@ jobs:
       - name: DB Migration
         env:
           DB_PASS: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ env.DB_HOST_ADDRESS }}
+          DB_NAME: user_service_db 
         run: |
-          echo "Running DB Migration using AWS Systems Manager (SSM)..."
+          echo "Running DB Migration using Flyway..."
           
-          # Transfer schema.sql content to /tmp/schema.sql on EC2
-          SCHEMA_SQL_BASE64=$(cat schema.sql | base64)
+          # Prepare Flyway directory structure
+          mkdir -p db/migration/
           
-          echo "Transferring schema.sql to EC2..."
-          aws ssm send-command \
-            --instance-ids $EC2_INSTANCE_ID \
-            --document-name "AWS-RunShellScript" \
-            --comment "Transfer schema.sql for DB Migration" \
-            --parameters "commands=[\"echo '$SCHEMA_SQL_BASE64' | base64 -d > /tmp/schema.sql\"]" \
-            --output text
-
-          # Execute DB migration script on EC2 via SSM
-          echo "Executing DB migration script on EC2..."
-          aws ssm send-command \
-            --instance-ids $EC2_INSTANCE_ID \
-            --document-name "AWS-RunShellScript" \
-            --comment "Execute DB Migration" \
-            --parameters "commands=[\"mysql -h $DB_HOST_ADDRESS -u admin -p'$DB_PASS' user_service_db < /tmp/schema.sql\"]" \
-            --output text
+          # Move and rename schema.sql into the V1.0 structure file
+          # We assume the user must manually move the data part to V1.1 later.
+          mv schema.sql db/migration/V1.0__Initial_Setup.sql
+          
+          # Execute Flyway migrate command
+          /usr/local/bin/flyway -url="jdbc:mysql://${DB_HOST}:3306/${DB_NAME}" \
+                                -user="admin" \
+                                -password="${DB_PASS}" \
+                                -locations="filesystem:db/migration" \
+                                migrate
 
       - name: Deploy Application (Backend)
         run: |
@@ -123,7 +127,7 @@ jobs:
           aws ssm send-command \
             --instance-ids $EC2_INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart myapp.service" \
+            --comment "Restart myapp.service"
             --parameters 'commands=["sudo systemctl restart myapp.service"]' \
             --output text
       
@@ -132,7 +136,6 @@ jobs:
           echo "Syncing frontend files to S3 bucket: $S3_BUCKET_NAME..."
           
           # 1. Replace ${api_url} placeholder in index.html with the actual API Gateway URL
-          # Note: The $ in ${api_url} is escaped as \$ to prevent bash expansion.
           sed "s|\${api_url}|$API_GATEWAY_URL|g" index.html > index_temp.html
           
           # 2. Upload the rendered index.html file
