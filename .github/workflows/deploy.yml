@@ -38,7 +38,7 @@ jobs:
       - name: Install Other Tools
         run: |
           sudo apt-get update
-          # 安装 Flyway 依赖的 Java 环境
+          # Install Java JRE (Flyway dependency) and other tools
           sudo apt-get install -y jq mysql-client default-jre 
           sudo apt-get install -y python3-pip
           sudo pip3 install awscli
@@ -50,16 +50,18 @@ jobs:
           echo "Installing Flyway to ${INSTALL_DIR}..."
           curl -L -o flyway.tar.gz https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz
           sudo mkdir -p ${INSTALL_DIR}
-          # 解压 Flyway 到指定目录
+          # Extract Flyway to /opt/flyway/
           sudo tar -xzf flyway.tar.gz -C ${INSTALL_DIR} --strip-components=1
           rm flyway.tar.gz
+          
+          # FIX: Grant execution permission to the 'flyway' binary
+          sudo chmod +x ${INSTALL_DIR}/flyway 
           # ------------------------------------
           
           echo "Validating tools..."
           aws --version
           jq --version
           mysql --version
-          # 验证 Flyway 是否安装成功
           /opt/flyway/flyway -v
 
       - name: Terraform Init
@@ -100,10 +102,10 @@ jobs:
         run: |
           echo "Running DB Migration using Flyway..."
           
-          # 1. 确保 Flyway 目录存在 (包含 V1.0__.sql, V1.1__.sql 等文件)
+          # Ensure db/migration folder exists (where V1.0__.sql etc. reside)
           mkdir -p db/migration/
           
-          # 2. 核心执行 Flyway migrate 命令，直接连接 RDS
+          # Execute Flyway migrate command directly against RDS
           /opt/flyway/flyway -url="jdbc:mysql://${DB_HOST}:3306/${DB_NAME}" \
                              -user="admin" \
                              -password="${DB_PASS}" \
