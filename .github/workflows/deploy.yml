@@ -26,7 +26,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-1
       
-      - name: Install Tools (Terraform, jq, mysql, Flyway)
+      - name: Install Tools (Terraform, jq, mysql)
         run: |
           echo "Installing Terraform..."
         
@@ -38,74 +38,16 @@ jobs:
       - name: Install Other Tools
         run: |
           sudo apt-get update
-          # Install Flyway dependency (Java JRE) and other tools
-          sudo apt-get install -y jq mysql-client default-jre 
-          sudo apt-get install -y python3-pip
+          # Removed Flyway/Java installation from Runner
+          sudo apt-get install -y jq mysql-client 
+          sudo apt-get install -y python3-pip zip 
           sudo pip3 install awscli
-          
-          # --- CORRECTED FLYWAY INSTALLATION (Increased Reliability) ---
-          FLYWAY_VERSION="9.22.3"
-          INSTALL_DIR="/opt/flyway"
-          TAR_FILE="flyway.tar.gz"
-          
-          echo "Installing Flyway to ${INSTALL_DIR}..."
-          
-          # Use --fail to ensure curl returns an error code if the download is incomplete or fails
-          curl -L -o ${TAR_FILE} --fail https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz
-          
-          sudo mkdir -p ${INSTALL_DIR}
-          # Extract Flyway to /opt/flyway/
-          sudo tar -xzf ${TAR_FILE} -C ${INSTALL_DIR} --strip-components=1
-          rm ${TAR_FILE}
-          
-          # Grant execution permission to the 'flyway' binary (Fixes Exit Code 126)
-          sudo chmod +x ${INSTALL_DIR}/flyway 
-          # -----------------------------------------------------------
           
           echo "Validating tools..."
           aws --version
           jq --version
           mysql --version
-          /opt/flyway/flyway -v
 
-      - name: Get Terraform Outputs Init (For Read)
-        # Ensure local state is configured for reading outputs
-        run: terraform init -reconfigure -backend=true
-        env:
-          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-
-      - name: Get Terraform Outputs (Read Raw Values)
-        id: tf-outputs
-        run: |
-          DB_HOST_ADDRESS_RAW=$(terraform output -raw database_address)
-          S3_BUCKET_NAME_RAW=$(terraform output -raw s3_bucket_name)
-          EC2_INSTANCE_ID_RAW=$(terraform output -raw ec2_instance_id)
-          API_GATEWAY_URL_RAW=$(terraform output -raw backend_api_url)
-          
-          echo "--- RAW TERRAFORM OUTPUTS DEBUG ---"
-          echo "DB_HOST_ADDRESS_RAW: $DB_HOST_ADDRESS_RAW"
-          echo "S3_BUCKET_NAME_RAW: $S3_BUCKET_NAME_RAW"
-          echo "EC2_INSTANCE_ID_RAW: $EC2_INSTANCE_ID_RAW"
-          echo "API_GATEWAY_URL_RAW: $API_GATEWAY_URL_RAW"
-          echo "-----------------------------------"
-          
-          # Write RAW output values to GITHUB_ENV
-          echo "DB_HOST_ADDRESS=$DB_HOST_ADDRESS_RAW" >> $GITHUB_ENV
-          echo "S3_BUCKET_NAME=$S3_BUCKET_NAME_RAW" >> $GITHUB_ENV
-          echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID_RAW" >> $GITHUB_ENV
-          echo "API_GATEWAY_URL=$API_GATEWAY_URL_RAW" >> $GITHUB_ENV
-          
-          echo "Successfully wrote outputs to GITHUB_ENV"
-          
-      - name: Verify Environment Variables in Next Step
-        run: |
-          echo "--- ENVIRONMENT VARIABLE VERIFICATION ---"
-          if [ -z "$API_GATEWAY_URL" ]; then
-            echo "Error: API_GATEWAY_URL is EMPTY. Halting deployment."
-            exit 1
-          fi
-          echo "API URL (Verified): $API_GATEWAY_URL"
-          
       - name: Terraform Init
         run: |
           rm -rf .terraform .terraform.lock.hcl
@@ -123,23 +65,49 @@ jobs:
         env:
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
 
-      - name: DB Migration (Using Flyway)
+      - name: Get Terraform Outputs
+        id: tf-outputs
+        run: |
+          echo "DB_HOST_ADDRESS=$(terraform output -raw database_address)" >> $GITHUB_ENV
+          echo "S3_BUCKET_NAME=$(terraform output -raw s3_bucket_name)" >> $GITHUB_ENV
+          echo "EC2_INSTANCE_ID=$(terraform output -raw ec2_instance_id)" >> $GITHUB_ENV
+          echo "API_GATEWAY_URL=$(terraform output -raw backend_api_url)" >> $GITHUB_ENV
+          
+          echo "--- Outputs Set ---"
+          echo "S3 Bucket: $S3_BUCKET_NAME"
+          echo "EC2 Instance ID: $EC2_INSTANCE_ID"
+          echo "API Gateway URL: $API_GATEWAY_URL"
+
+      - name: DB Migration (Remote Flyway via SSM) ⭐️ FIX APPLIED HERE
         env:
           DB_PASS: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ env.DB_HOST_ADDRESS }}
-          DB_NAME: user_service_db 
+          DB_NAME: user_service_db
         run: |
-          echo "Running DB Migration using Flyway..."
+          echo "Running remote DB Migration using Flyway via SSM..."
           
-          # Ensure db/migration folder exists and contains SQL files
-          mkdir -p db/migration/
+          # 1. Zip the migration folder from the Runner
+          zip -r flyway_migrations.zip db/migration/
           
-          # Execute Flyway migrate command directly against RDS
-          /opt/flyway/flyway -url="jdbc:mysql://${DB_HOST}:3306/${DB_NAME}" \
-                             -user="admin" \
-                             -password="${DB_PASS}" \
-                             -locations="filesystem:db/migration" \
-                             migrate
+          # 2. Transfer the zip file to EC2 using SSM (Base64 encoding)
+          FLYWAY_MIGRATIONS_BASE64=$(cat flyway_migrations.zip | base64)
+          
+          echo "Transferring migration files to EC2..."
+          aws ssm send-command \
+            --instance-ids $EC2_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --comment "Transfer Flyway files" \
+            --parameters "commands=[\"unzip -o /tmp/migrations.zip -d /opt/flyway/sql/\", \"rm /tmp/migrations.zip\"]" \
+            --output text
+
+          # 3. Execute Flyway migrate command REMOTELY on EC2 via SSM
+          echo "Executing Flyway migrate command on EC2..."
+          aws ssm send-command \
+            --instance-ids $EC2_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --comment "Execute Flyway Migration" \
+            --parameters "commands=[\"sudo /opt/flyway/flyway -url='jdbc:mysql://${DB_HOST}:3306/${DB_NAME}' -user='admin' -password='${DB_PASS}' -locations=filesystem:/opt/flyway/sql/db/migration migrate\"]" \
+            --output text
 
       - name: Deploy Application (Backend)
         run: |
@@ -161,7 +129,7 @@ jobs:
           aws ssm send-command \
             --instance-ids $EC2_INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart myapp.service"
+            --comment "Restart myapp.service" \
             --parameters 'commands=["sudo systemctl restart myapp.service"]' \
             --output text
       
