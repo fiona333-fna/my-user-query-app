@@ -26,7 +26,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-1
       
-      - name: Install Tools (Terraform, jq, mysql)
+      - name: Install Tools (Terraform, jq, mysql, Flyway)
         run: |
           echo "Installing Terraform..."
         
@@ -35,24 +35,77 @@ jobs:
         with:
           terraform_version: "1.8.0"
           
-      - name: Install Other Tools and Flyway
+      - name: Install Other Tools
         run: |
-          echo "Installing other tools and Flyway..."
           sudo apt-get update
-          sudo apt-get install -y jq mysql-client default-jre
-          
-          # Install Flyway CLI
-          FLYWAY_VERSION="9.22.3"
-          wget -qO- "https://download.red-gate.com/flyway/community/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz" | tar xvz
-          sudo mv flyway-$FLYWAY_VERSION/flyway /usr/local/bin/flyway
-          
+          # Install Flyway dependency (Java JRE) and other tools
+          sudo apt-get install -y jq mysql-client default-jre 
           sudo apt-get install -y python3-pip
           sudo pip3 install awscli
+          
+          # --- CORRECTED FLYWAY INSTALLATION (Increased Reliability) ---
+          FLYWAY_VERSION="9.22.3"
+          INSTALL_DIR="/opt/flyway"
+          TAR_FILE="flyway.tar.gz"
+          
+          echo "Installing Flyway to ${INSTALL_DIR}..."
+          
+          # Use --fail to ensure curl returns an error code if the download is incomplete or fails
+          curl -L -o ${TAR_FILE} --fail https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz
+          
+          sudo mkdir -p ${INSTALL_DIR}
+          # Extract Flyway to /opt/flyway/
+          sudo tar -xzf ${TAR_FILE} -C ${INSTALL_DIR} --strip-components=1
+          rm ${TAR_FILE}
+          
+          # Grant execution permission to the 'flyway' binary (Fixes Exit Code 126)
+          sudo chmod +x ${INSTALL_DIR}/flyway 
+          # -----------------------------------------------------------
+          
           echo "Validating tools..."
           aws --version
           jq --version
-          flyway -version
+          mysql --version
+          /opt/flyway/flyway -v
 
+      - name: Get Terraform Outputs Init (For Read)
+        # Ensure local state is configured for reading outputs
+        run: terraform init -reconfigure -backend=true
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+
+      - name: Get Terraform Outputs (Read Raw Values)
+        id: tf-outputs
+        run: |
+          DB_HOST_ADDRESS_RAW=$(terraform output -raw database_address)
+          S3_BUCKET_NAME_RAW=$(terraform output -raw s3_bucket_name)
+          EC2_INSTANCE_ID_RAW=$(terraform output -raw ec2_instance_id)
+          API_GATEWAY_URL_RAW=$(terraform output -raw backend_api_url)
+          
+          echo "--- RAW TERRAFORM OUTPUTS DEBUG ---"
+          echo "DB_HOST_ADDRESS_RAW: $DB_HOST_ADDRESS_RAW"
+          echo "S3_BUCKET_NAME_RAW: $S3_BUCKET_NAME_RAW"
+          echo "EC2_INSTANCE_ID_RAW: $EC2_INSTANCE_ID_RAW"
+          echo "API_GATEWAY_URL_RAW: $API_GATEWAY_URL_RAW"
+          echo "-----------------------------------"
+          
+          # Write RAW output values to GITHUB_ENV
+          echo "DB_HOST_ADDRESS=$DB_HOST_ADDRESS_RAW" >> $GITHUB_ENV
+          echo "S3_BUCKET_NAME=$S3_BUCKET_NAME_RAW" >> $GITHUB_ENV
+          echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID_RAW" >> $GITHUB_ENV
+          echo "API_GATEWAY_URL=$API_GATEWAY_URL_RAW" >> $GITHUB_ENV
+          
+          echo "Successfully wrote outputs to GITHUB_ENV"
+          
+      - name: Verify Environment Variables in Next Step
+        run: |
+          echo "--- ENVIRONMENT VARIABLE VERIFICATION ---"
+          if [ -z "$API_GATEWAY_URL" ]; then
+            echo "Error: API_GATEWAY_URL is EMPTY. Halting deployment."
+            exit 1
+          fi
+          echo "API URL (Verified): $API_GATEWAY_URL"
+          
       - name: Terraform Init
         run: |
           rm -rf .terraform .terraform.lock.hcl
@@ -70,32 +123,23 @@ jobs:
         env:
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
 
-      - name: Get Terraform Outputs
-        id: tf-outputs
-        run: |
-          echo "DB_HOST_ADDRESS=$(terraform output -raw database_address)" >> $GITHUB_ENV
-          echo "S3_BUCKET_NAME=$(terraform output -raw s3_bucket_name)" >> $GITHUB_ENV
-          echo "EC2_INSTANCE_ID=$(terraform output -raw ec2_instance_id)" >> $GITHUB_ENV
-          echo "API_GATEWAY_URL=$(terraform output -raw backend_api_url)" >> $GITHUB_ENV
-          
-          echo "--- Outputs Set ---"
-          echo "S3 Bucket: $S3_BUCKET_NAME"
-          echo "EC2 Instance ID: $EC2_INSTANCE_ID"
-          echo "API Gateway URL: $API_GATEWAY_URL"
-
-      - name: DB Migration (using Flyway on Runner)
+      - name: DB Migration (Using Flyway)
         env:
           DB_PASS: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ env.DB_HOST_ADDRESS }}
+          DB_NAME: user_service_db 
         run: |
-          echo "Running Flyway migration on GitHub Runner..."
+          echo "Running DB Migration using Flyway..."
           
-          # IMPORTANT: You must ensure your SQL files are in a directory named 'sql/'
-          # and named correctly, e.g., 'sql/V1__initial_schema.sql'.
-          flyway -url="jdbc:mysql://$DB_HOST_ADDRESS:3306/user_service_db" \
-                 -user=admin \
-                 -password='${{ secrets.DB_PASSWORD }}' \
-                 -locations=filesystem:sql \
-                 migrate
+          # Ensure db/migration folder exists and contains SQL files
+          mkdir -p db/migration/
+          
+          # Execute Flyway migrate command directly against RDS
+          /opt/flyway/flyway -url="jdbc:mysql://${DB_HOST}:3306/${DB_NAME}" \
+                             -user="admin" \
+                             -password="${DB_PASS}" \
+                             -locations="filesystem:db/migration" \
+                             migrate
 
       - name: Deploy Application (Backend)
         run: |
@@ -117,7 +161,7 @@ jobs:
           aws ssm send-command \
             --instance-ids $EC2_INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart myapp.service" \
+            --comment "Restart myapp.service"
             --parameters 'commands=["sudo systemctl restart myapp.service"]' \
             --output text
       
@@ -125,18 +169,14 @@ jobs:
         run: |
           echo "Syncing frontend files to S3 bucket: $S3_BUCKET_NAME..."
           
-          # 1. 确保 API Gateway URL 中的特殊字符（如斜杠/）被转义，以便安全地用于 sed 命令。
-          # 使用printf和sed来转义所有&和/符号，并将结果存储在 SAFE_API_URL 变量中
-          SAFE_API_URL=$(printf '%s\n' "$API_GATEWAY_URL" | sed 's/[&/]/\\&/g')
+          # 1. Replace ${api_url} placeholder in index.html with the actual API Gateway URL
+          sed "s|\${api_url}|$API_GATEWAY_URL|g" index.html > index_temp.html
           
-          # 2. 使用 # 作为分隔符，并使用 SAFE_API_URL 替换 ${api_url}
-          sed "s#\${api_url}#$SAFE_API_URL#g" index.html > index_temp.html
-          
-          # 3. Upload the rendered index.html file
+          # 2. Upload the rendered index.html file
           aws s3 cp index_temp.html s3://$S3_BUCKET_NAME/index.html --content-type "text/html"
           
-          # 4. Upload all js files
+          # 3. Upload all js files
           aws s3 sync . s3://$S3_BUCKET_NAME --exclude "*" --include "js/*"
 
-          # 5. Clean up temporary file
+          # 4. Clean up temporary file
           rm index_temp.html
