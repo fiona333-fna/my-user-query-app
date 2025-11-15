@@ -220,6 +220,7 @@ resource "aws_instance" "web_server" {
   associate_public_ip_address = false
   key_name = "jenkins-deploy-key"
 
+  # ⭐️ FIX: Changed Nginx location from /prod/ to /
   user_data = <<-EOF
     #!/bin/bash
     set -e 
@@ -255,6 +256,7 @@ server {
     listen 80;
     server_name _;
 
+    # A. NLB check (Exact match, highest priority)
     location = / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
@@ -263,7 +265,10 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    location /prod/ {
+    # ⭐️ FIX: B. API Gateway Traffic (Prefix match)
+    # Changed from /prod/ to /
+    # This will now match /getinfo
+    location / {
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' '*';
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, HEAD';
@@ -275,7 +280,8 @@ server {
         }
         add_header 'Access-Control-Allow-Origin' '*' always;
         
-        proxy_pass http://127.0.0.1:8080/; 
+        # /getinfo -> /getinfo
+        proxy_pass http://127.0.0.1:8080; 
         
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -314,6 +320,8 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOT
+
+    sudo chown -R ec2-user:ec2-user /opt/app
 
     sudo systemctl daemon-reload
     sudo systemctl start nginx
