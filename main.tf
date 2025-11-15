@@ -233,14 +233,18 @@ resource "aws_instance" "web_server" {
     
     sudo rm -f /tmp/flyway.tar.gz
     sudo rm -rf /tmp/flyway-$FLYWAY_VERSION/
+    sudo rm -rf /opt/flyway-$FLYWAY_VERSION/ 
+    sudo rm -f /usr/local/bin/flyway 
     
     wget -O /tmp/flyway.tar.gz "$DOWNLOAD_URL"
     
     sudo tar -xzf /tmp/flyway.tar.gz -C /tmp/
     
-    sudo mv /tmp/flyway-$FLYWAY_VERSION/flyway /usr/local/bin/flyway
+    sudo mv /tmp/flyway-$FLYWAY_VERSION /opt/
     
-    sudo chmod +x /usr/local/bin/flyway
+    sudo chmod +x /opt/flyway-$FLYWAY_VERSION/flyway
+    
+    sudo ln -s /opt/flyway-$FLYWAY_VERSION/flyway /usr/local/bin/flyway
     
     sudo rm /tmp/flyway.tar.gz
     
