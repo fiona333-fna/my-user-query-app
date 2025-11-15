@@ -255,7 +255,6 @@ resource "aws_instance" "web_server" {
     sudo mkdir -p $${FLYWEY_HOME}/sql/db/migration
     
     echo "Downloading and installing Flyway..."
-    # 确保版本号变量也被转义
     wget -q https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/$${FLYWEY_VERSION}/flyway-commandline-$${FLYWEY_VERSION}.tar.gz
     
     tar -xzf flyway-commandline-$${FLYWEY_VERSION}.tar.gz -C /tmp/
@@ -266,14 +265,12 @@ resource "aws_instance" "web_server" {
     sudo chown -R ec2-user:ec2-user $${FLYWEY_HOME}
     
     # 5. Create Nignx configure
-    # ... (其余配置不变，但请检查 Nginx 配置中是否有其他 Bash 变量需要转义)
     # 检查: location /prod/ 中的 proxy_pass http://127.0.0.1:8080/ 没有变量，安全。
     
     # 6. create path
     sudo mkdir -p /opt/app
     
     # 7. DB Environment
-    # 这里的 DB 变量是 Terraform 变量，所以保留 `${...}` 不变
     sudo tee /etc/myapp.conf > /dev/null <<EOT
 DB_HOST=${aws_db_instance.default.address}
 DB_USER=${aws_db_instance.default.username}
