@@ -315,8 +315,6 @@ RestartSec=10
 WantedBy=multi-user.target
 EOT
 
-    sudo chown -R ec2-user:ec2-user /opt/app
-
     sudo systemctl daemon-reload
     sudo systemctl start nginx
     sudo systemctl enable nginx
