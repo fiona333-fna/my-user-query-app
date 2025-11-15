@@ -150,7 +150,7 @@ resource "aws_security_group" "web_sg" {
         ]  
     }
     
-    # Ingress rule to allow SSH from GitHub Actions (Should be removed, but kept for original structure)
+    # Ingress rule to allow SSH from GitHub Actions (Deprecated, using SSM now)
     ingress {
         from_port   = 22
         to_port     = 22
@@ -250,7 +250,7 @@ resource "aws_instance" "web_server" {
   associate_public_ip_address = false
   key_name = "jenkins-deploy-key"
 
-  # user_data now includes Flyway installation and adjusted startup logic
+  # user_data now includes Flyway installation (FIXED)
   user_data = <<-EOF
     #!/bin/bash
     set -e 
@@ -258,13 +258,24 @@ resource "aws_instance" "web_server" {
     # 1. Install Nginx
     sudo amazon-linux-extras install nginx1 -y
     
-    # 2. Install Python 3, pip, git, mysql, and JRE <--- ADD default-jre for Flyway
+    # 2. Install Python 3, pip, git, mysql, and JRE 
     sudo yum install python3-pip git mysql default-jre -y 
     
-    # 3. Install Flyway CLI 
+    # 3. Install Flyway CLI (FIXED: Use multi-step download for reliability)
     FLYWAY_VERSION="9.22.3"
-    wget -qO- "https://download.red-gate.com/flyway/community/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz" | tar xvz
-    sudo mv flyway-$FLYWAY_VERSION/flyway /usr/local/bin/flyway
+    DOWNLOAD_URL="https://download.red-gate.com/flyway/community/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz"
+    
+    # Download the file to /tmp
+    wget -O /tmp/flyway.tar.gz "$DOWNLOAD_URL"
+    
+    # Extract the file in /tmp (safe extraction)
+    tar -xzf /tmp/flyway.tar.gz -C /tmp/
+    
+    # Move the executable to the path
+    sudo mv /tmp/flyway-$FLYWAY_VERSION/flyway /usr/local/bin/flyway
+    
+    # Clean up
+    rm /tmp/flyway.tar.gz
     
     # 4. Install flask
     sudo pip3 install flask pymysql dbutils
@@ -313,7 +324,7 @@ EOT
     # 6. create app path
     sudo mkdir -p /opt/app
     
-    # 7. Create Flyway Path and set ownership
+    # 7. Create Flyway Path and set ownership (This was the missing directory)
     sudo mkdir -p /opt/flyway/sql
     sudo chown -R ec2-user:ec2-user /opt/flyway
     
@@ -428,7 +439,7 @@ resource "aws_apigatewayv2_integration" "api_integration" {
 
 resource "aws_apigatewayv2_route" "default_route" {
     api_id    = aws_apigatewayv2_api.api.id
-    route_key = "ANY /{proxy+}" # Changed from $default for proper path forwarding
+    route_key = "ANY /{proxy+}" # Changed for proper path forwarding
     target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
 }
 
@@ -538,7 +549,7 @@ output "backend_api_url" {
 }
 
 output "database_address" {
-    description = "The hostname of the RDS (MySQL) database. Use this in Python."
+    description = "The hostname of the RDS (MySQL) database. Used by Flyway and Python."
     value       = aws_db_instance.default.address
 }
 
