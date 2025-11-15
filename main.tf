@@ -250,7 +250,7 @@ resource "aws_instance" "web_server" {
   associate_public_ip_address = false
   key_name = "jenkins-deploy-key"
 
-  # user_data now includes Flyway installation (FIXED) and updated startup logic
+  # ⭐️ FIX: user_data is updated with reliable Flyway installation
   user_data = <<-EOF
     #!/bin/bash
     set -e 
@@ -261,14 +261,14 @@ resource "aws_instance" "web_server" {
     # 2. Install Python 3, pip, git, mysql, and JRE 
     sudo yum install python3-pip git mysql default-jre -y 
     
-    # 3. Install Flyway CLI 
+    # 3. Install Flyway CLI (FIXED: Use robust download/extract)
     FLYWAY_VERSION="9.22.3"
     DOWNLOAD_URL="https://download.red-gate.com/flyway/community/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz"
     
     # Download the file to /tmp
     wget -O /tmp/flyway.tar.gz "$DOWNLOAD_URL"
     
-    # Extract the file in /tmp (safe extraction)
+    # Extract the file in /tmp
     tar -xzf /tmp/flyway.tar.gz -C /tmp/
     
     # Move the executable to the path
@@ -426,7 +426,7 @@ resource "aws_apigatewayv2_api" "api" {
     name          = "Project-User-Service-API"
     protocol_type = "HTTP"
     
-    # FIX: Add CORS Configuration
+    # ⭐️ FIX: Add CORS Configuration
     cors_configuration {
         allow_origins = ["*"] 
         allow_methods = ["POST", "GET", "OPTIONS"]
@@ -447,7 +447,7 @@ resource "aws_apigatewayv2_integration" "api_integration" {
 
 resource "aws_apigatewayv2_route" "default_route" {
     api_id    = aws_apigatewayv2_api.api.id
-    route_key = "ANY /{proxy+}" 
+    route_key = "ANY /{proxy+}" # ⭐️ FIX: Changed for proper path forwarding
     target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
 }
 
@@ -561,7 +561,7 @@ output "database_address" {
     value       = aws_db_instance.default.address
 }
 
-# Added outputs for CI/CD Pipeline compatibility
+# ⭐️ FIX: Added outputs for CI/CD Pipeline compatibility
 output "ec2_instance_id" {
   description = "The ID of the EC2 instance running the backend app"
   value       = aws_instance.web_server.id
