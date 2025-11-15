@@ -1,6 +1,4 @@
-# AWS Provider
 terraform {
-  # S3 backend for storing Terraform state
   backend "s3" {
     bucket         = "fiona-terraform-state-bucket-12345" 
     key            = "global/terraform.tfstate"
@@ -17,12 +15,10 @@ terraform {
   }
 }
 
-# Configure the AWS Provider
 provider "aws" {
     region = "ap-northeast-1"
 }
 
-# Create a VPC
 resource "aws_vpc" "main" {
     cidr_block = "10.0.0.0/16"
     enable_dns_hostnames = true
@@ -34,19 +30,16 @@ resource "aws_vpc" "main" {
 
 resource "aws_internet_gateway" "gw" {
     vpc_id = aws_vpc.main.id
-
     tags = {
         Name = "my-project-igw"
     }
 }
 
-# Create three subnets
 resource "aws_subnet" "public_subnet" {
     vpc_id                  = aws_vpc.main.id
     cidr_block              = "10.0.1.0/24"
     availability_zone       = "ap-northeast-1a" 
     map_public_ip_on_launch = true               
-
     tags = {
         Name = "public-subnet-1"
     }
@@ -56,7 +49,6 @@ resource "aws_subnet" "private_subnet" {
     vpc_id                  = aws_vpc.main.id
     cidr_block              = "10.0.2.0/24"
     availability_zone       = "ap-northeast-1c" 
-
     tags = {
         Name = "private-subnet-1"
     }
@@ -69,43 +61,35 @@ resource "aws_subnet" "private_subnet_2" {
     tags = { Name = "private-subnet-2" }
 }
 
-# Create Route table
 resource "aws_route_table" "public_rt" {
     vpc_id = aws_vpc.main.id
-
     route {
         cidr_block = "0.0.0.0/0"
         gateway_id = aws_internet_gateway.gw.id
     }
-
     tags = {
         Name = "public-route-table"
     }
 }
 
-# Associate route table with public subnet
 resource "aws_route_table_association" "public_rt_assoc" {
     subnet_id      = aws_subnet.public_subnet.id
     route_table_id = aws_route_table.public_rt.id
 }
 
-# Create EIP for NAT Gateway
 resource "aws_eip" "nat" {
     depends_on = [aws_internet_gateway.gw] 
     tags = { Name = "Project-NAT-EIP" }
 }
 
-# NAT gateway in public subnet
 resource "aws_nat_gateway" "nat_gw" {
     allocation_id = aws_eip.nat.id
     subnet_id     = aws_subnet.public_subnet.id  
-
     tags = {
         Name = "Project-NAT-Gateway"
     }
 }
 
-# Create private route table
 resource "aws_route_table" "private_rt" {
     vpc_id = aws_vpc.main.id
     tags = {
@@ -113,33 +97,27 @@ resource "aws_route_table" "private_rt" {
     }
 }
 
-# NAT Gateway -> Private Route Table
 resource "aws_route" "private_nat_route" {
     route_table_id         = aws_route_table.private_rt.id
     destination_cidr_block = "0.0.0.0/0"
     nat_gateway_id         = aws_nat_gateway.nat_gw.id
 }
 
-# Associate private route table with private subnet
 resource "aws_route_table_association" "private_rt_assoc" {
     subnet_id      = aws_subnet.private_subnet.id
     route_table_id = aws_route_table.private_rt.id
 }
 
-# Associate private route table with private subnet2
 resource "aws_route_table_association" "private_rt_assoc_2" {
     subnet_id      = aws_subnet.private_subnet_2.id
     route_table_id = aws_route_table.private_rt.id
 }
 
-
-# Create Security Group for EC2
 resource "aws_security_group" "web_sg" {
     name        = "web-security-group"
     description = "Allow internal traffic from API Gateway on port 80"
     vpc_id      = aws_vpc.main.id
 
-    # Ingress rule for EC2 (Python login in 8080)   
     ingress {
         from_port   = 80
         to_port     = 80
@@ -150,7 +128,6 @@ resource "aws_security_group" "web_sg" {
         ]  
     }
     
-    # Ingress rule to allow SSH from GitHub Actions
     ingress {
         from_port   = 22
         to_port     = 22
@@ -158,8 +135,6 @@ resource "aws_security_group" "web_sg" {
         cidr_blocks = ["0.0.0.0/0"] 
     }
 
-
-    # Egress rule
     egress {
         from_port   = 0
         to_port     = 0
@@ -172,7 +147,6 @@ resource "aws_security_group" "web_sg" {
     }
 }
 
-# Create Security Group for RDS
 resource "aws_security_group" "db_sg" {
     name        = "db-security-group"
     description = "Allow MySQL traffic only from EC2"
@@ -197,10 +171,8 @@ resource "aws_security_group" "db_sg" {
     }
 }
 
-# Create IAM
 resource "aws_iam_role" "ec2_ssm_role" {
     name = "ec2-ssm-role"
-
 
     assume_role_policy = jsonencode({
         Version = "2012-10-17",
@@ -230,7 +202,6 @@ resource "aws_iam_instance_profile" "ec2_profile" {
     role = aws_iam_role.ec2_ssm_role.name
 }
 
-# Amazon Linux 2 AMI
 data "aws_ami" "amazon_linux_2" {
     most_recent = true
     owners      = ["amazon"]
@@ -240,7 +211,6 @@ data "aws_ami" "amazon_linux_2" {
     }
 }
 
-# Create EC2 Instance (user_data)
 resource "aws_instance" "web_server" {
   ami                         = data.aws_ami.amazon_linux_2.id
   instance_type               = "t3.micro"
@@ -250,7 +220,6 @@ resource "aws_instance" "web_server" {
   associate_public_ip_address = false
   key_name = "jenkins-deploy-key"
 
-  # ⭐️ FIX: user_data is updated with reliable Flyway installation
   user_data = <<-EOF
     #!/bin/bash
     set -e 
@@ -261,9 +230,9 @@ resource "aws_instance" "web_server" {
     # 2. Install Python 3, pip, git, mysql, and JRE 
     sudo yum install python3-pip git mysql default-jre -y 
     
-    # 3. Install Flyway CLI (FIXED: Use robust download/extract)
-    FLYWAY_VERSION="9.22.3"
-    DOWNLOAD_URL="https://download.red-gate.com/flyway/community/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz"
+    # 3. Install Flyway CLI (FIXED: Using the new RedGate Maven URL)
+    FLYWAY_VERSION="10.8.1"
+    DOWNLOAD_URL="https://download.red-gate.com/maven/release/com/redgate/flyway/flyway-commandline/$FLYWAY_VERSION/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz"
     
     # Download the file to /tmp
     wget -O /tmp/flyway.tar.gz "$DOWNLOAD_URL"
@@ -371,7 +340,6 @@ EOT
   depends_on = [aws_db_instance.default]
 }
 
-# Create VPC Link
 resource "aws_apigatewayv2_vpc_link" "api_vpc_link" {
   name        = "project-api-vpc-link"
   subnet_ids  = [aws_subnet.private_subnet.id, aws_subnet.private_subnet_2.id] 
@@ -421,12 +389,10 @@ resource "aws_lb_target_group_attachment" "api_tg_attach" {
     port             = 80
 }
 
-# Create API Gateway REST API
 resource "aws_apigatewayv2_api" "api" {
     name          = "Project-User-Service-API"
     protocol_type = "HTTP"
     
-    # ⭐️ FIX: Add CORS Configuration
     cors_configuration {
         allow_origins = ["*"] 
         allow_methods = ["POST", "GET", "OPTIONS"]
@@ -447,7 +413,7 @@ resource "aws_apigatewayv2_integration" "api_integration" {
 
 resource "aws_apigatewayv2_route" "default_route" {
     api_id    = aws_apigatewayv2_api.api.id
-    route_key = "ANY /{proxy+}" # ⭐️ FIX: Changed for proper path forwarding
+    route_key = "ANY /{proxy+}" 
     target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
 }
 
@@ -461,7 +427,6 @@ resource "aws_apigatewayv2_stage" "api_stage" {
     depends_on = [ aws_apigatewayv2_route.default_route ]
 }
 
-# RDS subnet
 resource "aws_db_subnet_group" "db_subnet_group" {
     name       = "my-db-subnet-group"
     subnet_ids = [aws_subnet.private_subnet.id, aws_subnet.private_subnet_2.id]
@@ -471,14 +436,12 @@ resource "aws_db_subnet_group" "db_subnet_group" {
     }
 }
 
-# DB variable
 variable "db_password" {
     description = "The password for the RDS database"
     type        = string
     sensitive   = true 
 }
 
-# Create RDS Instance
 resource "aws_db_instance" "default" {
     identifier             = "my-project-db"
     allocated_storage      = 20 
@@ -494,12 +457,8 @@ resource "aws_db_instance" "default" {
     skip_final_snapshot    = true
 }
 
-
-# S3 static html
 resource "aws_s3_bucket" "frontend_bucket" {
-  
     bucket = "my-unique-user-query-app-fiona" 
-
     tags = {
         Name = "React Frontend Bucket"
     }
@@ -514,7 +473,6 @@ resource "aws_s3_bucket_public_access_block" "frontend_bucket_pac" {
     restrict_public_buckets = false
 }
 
-# S3 object resources are removed, CI/CD pipeline will handle uploads
 resource "aws_s3_bucket_website_configuration" "frontend_website" {
   bucket = aws_s3_bucket.frontend_bucket.id
 
@@ -523,7 +481,6 @@ resource "aws_s3_bucket_website_configuration" "frontend_website" {
   }
 }
 
-# S3 Policy
 resource "aws_s3_bucket_policy" "allow_public_read" {
     bucket = aws_s3_bucket.frontend_bucket.id
     policy = jsonencode({
@@ -544,8 +501,6 @@ resource "aws_s3_bucket_policy" "allow_public_read" {
     ]
 }
 
-
-# Output
 output "frontend_url" {
     description = "The URL for the React (S3) frontend"
     value       = aws_s3_bucket_website_configuration.frontend_website.website_endpoint
@@ -561,7 +516,6 @@ output "database_address" {
     value       = aws_db_instance.default.address
 }
 
-# ⭐️ FIX: Added outputs for CI/CD Pipeline compatibility
 output "ec2_instance_id" {
   description = "The ID of the EC2 instance running the backend app"
   value       = aws_instance.web_server.id
