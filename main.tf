@@ -1,14 +1,5 @@
 # AWS Provider
 terraform {
-  # S3 backend for storing Terraform state
-  backend "s3" {
-    bucket         = "fiona-terraform-state-bucket-12345" 
-    key            = "global/terraform.tfstate"
-    region         = "ap-northeast-1"
-    dynamodb_table = "terraform-state-lock"               
-    encrypt        = true
-  }
-
   required_providers {
     aws = {
         source  = "hashicorp/aws"
@@ -41,7 +32,9 @@ resource "aws_internet_gateway" "gw" {
 }
 
 # Create three subnets
+
 resource "aws_subnet" "public_subnet" {
+
     vpc_id                  = aws_vpc.main.id
     cidr_block              = "10.0.1.0/24"
     availability_zone       = "ap-northeast-1a" 
@@ -89,7 +82,7 @@ resource "aws_route_table_association" "public_rt_assoc" {
     route_table_id = aws_route_table.public_rt.id
 }
 
-# Create EIP for NAT Gateway
+# Create　EIP for NAT Gateway
 resource "aws_eip" "nat" {
     depends_on = [aws_internet_gateway.gw] 
     tags = { Name = "Project-NAT-EIP" }
@@ -133,7 +126,8 @@ resource "aws_route_table_association" "private_rt_assoc_2" {
 }
 
 
-# Create Security Group for EC2
+# Create Security Group for EC2 （防火墙）
+
 resource "aws_security_group" "web_sg" {
     name        = "web-security-group"
     description = "Allow internal traffic from API Gateway on port 80"
@@ -149,15 +143,6 @@ resource "aws_security_group" "web_sg" {
         aws_subnet.private_subnet_2.cidr_block
         ]  
     }
-    
-    # Ingress rule to allow SSH from GitHub Actions
-    ingress {
-        from_port   = 22
-        to_port     = 22
-        protocol    = "tcp"
-        cidr_blocks = ["0.0.0.0/0"] # NOTE: This is open for the demo. Should be restricted in production.
-    }
-
 
     # Egress rule
     egress {
@@ -172,7 +157,7 @@ resource "aws_security_group" "web_sg" {
     }
 }
 
-# Create Security Group for RDS
+# Create Security Group for RDS （防火墙）
 resource "aws_security_group" "db_sg" {
     name        = "db-security-group"
     description = "Allow MySQL traffic only from EC2"
@@ -248,9 +233,7 @@ resource "aws_instance" "web_server" {
   vpc_security_group_ids      = [aws_security_group.web_sg.id]
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
   associate_public_ip_address = false
-  key_name = "jenkins-deploy-key"
 
-  # user_data no longer contains git clone or service start
   user_data = <<-EOF
     #!/bin/bash
     set -e 
@@ -259,12 +242,27 @@ resource "aws_instance" "web_server" {
     sudo amazon-linux-extras install nginx1 -y
     
     # 2. Install Python 3, pip, git, python
-    sudo yum install python3-pip git mysql -y
+    sudo yum install python3-pip git mysql java-17-amazon-corretto -y
     
     # 3. Install flask
     sudo pip3 install flask pymysql dbutils
+
+    # 4. Install Flyway (for remote migration)  
+    FLYWEY_VERSION="9.22.3" # 检查最新版本
+    FLYWEY_HOME="/opt/flyway"
+    sudo mkdir -p ${FLYWEY_HOME}/sql/db/migration
+    echo "Downloading Flyway..."
+    wget -q https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWEY_VERSION}/flyway-commandline-${FLYWEY_VERSION}.tar.gz
     
-    # 4. Create Nignx configure
+    echo "Extracting Flyway..."
+    tar -xzf flyway-commandline-${FLYWEY_VERSION}.tar.gz -C /tmp/
+    sudo mv /tmp/flyway-${FLYWEY_VERSION} ${FLYWEY_HOME}
+    
+    # Create symlink for easier access
+    sudo ln -s ${FLYWEY_HOME}/flyway /usr/local/bin/flyway
+    sudo chown -R ec2-user:ec2-user ${FLYWEY_HOME}
+    
+    # 5. Create Nignx configure
     sudo tee /etc/nginx/conf.d/flask_proxy.conf > /dev/null <<'EOT'
 server {
     listen 80;
@@ -305,10 +303,10 @@ server {
 }
 EOT
 
-    # 5. create path
+    # 6. create path
     sudo mkdir -p /opt/app
     
-    # 6. DB Environment
+    # 7. DB Environment
     sudo tee /etc/myapp.conf > /dev/null <<EOT
 DB_HOST=${aws_db_instance.default.address}
 DB_USER=${aws_db_instance.default.username}
@@ -316,7 +314,7 @@ DB_PASS=${var.db_password}
 DB_NAME=${aws_db_instance.default.db_name}
 EOT
     
-    # 7. Create systemd Logfile
+    # 8. Create systemd Logfile
     sudo tee /etc/systemd/system/myapp.service > /dev/null <<'EOT'
 [Unit]
 Description=My Python Flask App
@@ -335,15 +333,18 @@ RestartSec=10
 WantedBy=multi-user.target
 EOT
 
-    # 9. User Chown
+    # 9. Clone
+    sudo git clone https://github.com/fiona333-fna/my-user-query-app.git /opt/app
+
+    # 10. User Chown
     sudo chown -R ec2-user:ec2-user /opt/app
 
-    # 10. Start services
+    # 11. Start services
     sudo systemctl daemon-reload
     sudo systemctl start nginx
     sudo systemctl enable nginx
     sudo systemctl enable myapp.service 
-    # 'start myapp.service' is removed, will be triggered by CI/CD pipeline
+    sudo systemctl start myapp.service 
   EOF
 
   tags = { Name = "Python-API-Server" }
@@ -467,7 +468,7 @@ resource "aws_db_instance" "default" {
 }
 
 
-# S3 static html
+# S3 static html （React）
 resource "aws_s3_bucket" "frontend_bucket" {
   
     bucket = "my-unique-user-query-app-fiona" 
@@ -486,7 +487,27 @@ resource "aws_s3_bucket_public_access_block" "frontend_bucket_pac" {
     restrict_public_buckets = false
 }
 
-# S3 object resources are removed, CI/CD pipeline will handle uploads
+# Load index.html to S3
+resource "aws_s3_object" "frontend_index" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+  key    = "index.html"
+  content = templatefile("${path.module}/index.html", {
+    api_url = aws_apigatewayv2_stage.api_stage.invoke_url
+  })
+  
+  content_type = "text/html"
+  depends_on = [aws_apigatewayv2_stage.api_stage]
+}
+
+resource "aws_s3_object" "js_files" {
+  for_each = fileset("${path.module}/js", "*.js")
+  
+  bucket = aws_s3_bucket.frontend_bucket.id
+  key    = "js/${each.value}"
+  source = "${path.module}/js/${each.value}"
+  content_type = "application/javascript"
+}
+
 resource "aws_s3_bucket_website_configuration" "frontend_website" {
   bucket = aws_s3_bucket.frontend_bucket.id
 
@@ -531,15 +552,4 @@ output "backend_api_url" {
 output "database_address" {
     description = "The hostname of the RDS (MySQL) database. Use this in Python."
     value       = aws_db_instance.default.address
-}
-
-# Added outputs to fix the pipeline errors
-output "ec2_instance_id" {
-  description = "The ID of the EC2 instance running the backend app"
-  value       = aws_instance.web_server.id
-}
-
-output "s3_bucket_name" {
-  description = "The name of the S3 bucket for the frontend"
-  value       = aws_s3_bucket.frontend_bucket.bucket
 }
