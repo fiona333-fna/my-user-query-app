@@ -150,7 +150,7 @@ resource "aws_security_group" "web_sg" {
         ]  
     }
     
-    # Ingress rule to allow SSH from GitHub Actions (Deprecated, using SSM now)
+    # Ingress rule to allow SSH from GitHub Actions
     ingress {
         from_port   = 22
         to_port     = 22
@@ -250,7 +250,7 @@ resource "aws_instance" "web_server" {
   associate_public_ip_address = false
   key_name = "jenkins-deploy-key"
 
-  # user_data now includes Flyway installation (FIXED)
+  # user_data now includes Flyway installation (FIXED) and updated startup logic
   user_data = <<-EOF
     #!/bin/bash
     set -e 
@@ -261,7 +261,7 @@ resource "aws_instance" "web_server" {
     # 2. Install Python 3, pip, git, mysql, and JRE 
     sudo yum install python3-pip git mysql default-jre -y 
     
-    # 3. Install Flyway CLI (FIXED: Use multi-step download for reliability)
+    # 3. Install Flyway CLI 
     FLYWAY_VERSION="9.22.3"
     DOWNLOAD_URL="https://download.red-gate.com/flyway/community/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz"
     
@@ -324,7 +324,7 @@ EOT
     # 6. create app path
     sudo mkdir -p /opt/app
     
-    # 7. Create Flyway Path and set ownership (This was the missing directory)
+    # 7. Create Flyway Path and set ownership
     sudo mkdir -p /opt/flyway/sql
     sudo chown -R ec2-user:ec2-user /opt/flyway
     
@@ -424,7 +424,15 @@ resource "aws_lb_target_group_attachment" "api_tg_attach" {
 # Create API Gateway REST API
 resource "aws_apigatewayv2_api" "api" {
     name          = "Project-User-Service-API"
-    protocol_type = "HTTP"    
+    protocol_type = "HTTP"
+    
+    # FIX: Add CORS Configuration
+    cors_configuration {
+        allow_origins = ["*"] 
+        allow_methods = ["POST", "GET", "OPTIONS"]
+        allow_headers = ["content-type", "x-amz-date", "authorization"]
+        max_age       = 300
+    }
 }
 
 resource "aws_apigatewayv2_integration" "api_integration" {
@@ -439,7 +447,7 @@ resource "aws_apigatewayv2_integration" "api_integration" {
 
 resource "aws_apigatewayv2_route" "default_route" {
     api_id    = aws_apigatewayv2_api.api.id
-    route_key = "ANY /{proxy+}" # Changed for proper path forwarding
+    route_key = "ANY /{proxy+}" 
     target    = "integrations/${aws_apigatewayv2_integration.api_integration.id}"
 }
 

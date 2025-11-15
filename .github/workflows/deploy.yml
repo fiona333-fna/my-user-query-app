@@ -78,7 +78,7 @@ jobs:
           echo "EC2 Instance ID: $EC2_INSTANCE_ID"
           echo "API Gateway URL: $API_GATEWAY_URL"
 
-      - name: DB Migration (Remote Flyway via SSM) ⭐️ FIX APPLIED HERE
+      - name: DB Migration (Remote Flyway via SSM)
         env:
           DB_PASS: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ env.DB_HOST_ADDRESS }}
