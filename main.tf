@@ -224,38 +224,33 @@ resource "aws_instance" "web_server" {
     #!/bin/bash
     set -e 
 
-    # 1. Install Nginx
     sudo amazon-linux-extras install nginx1 -y
     
-    # 2. Install Python 3, pip, git, mysql, and JRE 
-    sudo yum install python3-pip git mysql default-jre -y 
+    sudo yum install python3-pip git mysql java-11-amazon-corretto-headless -y 
     
-    # 3. Install Flyway CLI (FIXED: Using the new RedGate Maven URL)
     FLYWAY_VERSION="10.8.1"
     DOWNLOAD_URL="https://download.red-gate.com/maven/release/com/redgate/flyway/flyway-commandline/$FLYWAY_VERSION/flyway-commandline-$FLYWAY_VERSION-linux-x64.tar.gz"
     
-    # Download the file to /tmp
+    sudo rm -f /tmp/flyway.tar.gz
+    sudo rm -rf /tmp/flyway-$FLYWAY_VERSION/
+    
     wget -O /tmp/flyway.tar.gz "$DOWNLOAD_URL"
     
-    # Extract the file in /tmp
-    tar -xzf /tmp/flyway.tar.gz -C /tmp/
+    sudo tar -xzf /tmp/flyway.tar.gz -C /tmp/
     
-    # Move the executable to the path
     sudo mv /tmp/flyway-$FLYWAY_VERSION/flyway /usr/local/bin/flyway
     
-    # Clean up
-    rm /tmp/flyway.tar.gz
+    sudo chmod +x /usr/local/bin/flyway
     
-    # 4. Install flask
+    sudo rm /tmp/flyway.tar.gz
+    
     sudo pip3 install flask pymysql dbutils
     
-    # 5. Create Nignx configure
     sudo tee /etc/nginx/conf.d/flask_proxy.conf > /dev/null <<'EOT'
 server {
     listen 80;
     server_name _;
 
-    # A. NLB check
     location = / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
@@ -264,9 +259,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # B. API Gateway "prod" 
     location /prod/ {
-        # --- CORS Preflight (OPTIONS) Handling ---
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' '*';
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, HEAD';
@@ -276,10 +269,8 @@ server {
             add_header 'Content-Length' 0;
             return 204;
         }
-        # --- Actual Request Handling ---
         add_header 'Access-Control-Allow-Origin' '*' always;
         
-        # /prod/getinfo -> /getinfo
         proxy_pass http://127.0.0.1:8080/; 
         
         proxy_set_header Host $host;
@@ -290,14 +281,11 @@ server {
 }
 EOT
 
-    # 6. create app path
     sudo mkdir -p /opt/app
     
-    # 7. Create Flyway Path and set ownership
     sudo mkdir -p /opt/flyway/sql
     sudo chown -R ec2-user:ec2-user /opt/flyway
     
-    # 8. DB Environment
     sudo tee /etc/myapp.conf > /dev/null <<EOT
 DB_HOST=${aws_db_instance.default.address}
 DB_USER=${aws_db_instance.default.username}
@@ -305,7 +293,6 @@ DB_PASS=${var.db_password}
 DB_NAME=${aws_db_instance.default.db_name}
 EOT
     
-    # 9. Create systemd Logfile
     sudo tee /etc/systemd/system/myapp.service > /dev/null <<'EOT'
 [Unit]
 Description=My Python Flask App
@@ -324,15 +311,12 @@ RestartSec=10
 WantedBy=multi-user.target
 EOT
 
-    # 10. User Chown (re-run for safety)
     sudo chown -R ec2-user:ec2-user /opt/app
 
-    # 11. Start services
     sudo systemctl daemon-reload
     sudo systemctl start nginx
     sudo systemctl enable nginx
     sudo systemctl enable myapp.service 
-    # 'start myapp.service' is removed, will be triggered by CI/CD pipeline
   EOF
 
   tags = { Name = "Python-API-Server" }
