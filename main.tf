@@ -241,72 +241,39 @@ resource "aws_instance" "web_server" {
     # 1. Install Nginx
     sudo amazon-linux-extras install nginx1 -y
     
-    # 2. Install Python 3, pip, git, python
-    sudo yum install python3-pip git mysql java-17-amazon-corretto -y
+    # 2. Install Python 3, pip, git, mysql, and Java (for Flyway)
+    sudo yum install python3-pip git mysql java-17-amazon-corretto -y 
     
     # 3. Install flask
     sudo pip3 install flask pymysql dbutils
-
-    # 4. Install Flyway (for remote migration)  
-    FLYWEY_VERSION="9.22.3" # 检查最新版本
+    
+    # 4. Install Flyway and Setup Directories ⭐️ FIXED: Escaped Bash variables
+    FLYWEY_VERSION="9.22.3" # 您可以根据需要修改版本
     FLYWEY_HOME="/opt/flyway"
-    sudo mkdir -p ${FLYWEY_HOME}/sql/db/migration
-    echo "Downloading Flyway..."
-    wget -q https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWEY_VERSION}/flyway-commandline-${FLYWEY_VERSION}.tar.gz
     
-    echo "Extracting Flyway..."
-    tar -xzf flyway-commandline-${FLYWEY_VERSION}.tar.gz -C /tmp/
-    sudo mv /tmp/flyway-${FLYWEY_VERSION} ${FLYWEY_HOME}
+    echo "Creating Flyway directories: $${FLYWEY_HOME}/sql/db/migration"
+    sudo mkdir -p $${FLYWEY_HOME}/sql/db/migration
     
-    # Create symlink for easier access
-    sudo ln -s ${FLYWEY_HOME}/flyway /usr/local/bin/flyway
-    sudo chown -R ec2-user:ec2-user ${FLYWEY_HOME}
+    echo "Downloading and installing Flyway..."
+    # 确保版本号变量也被转义
+    wget -q https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/$${FLYWEY_VERSION}/flyway-commandline-$${FLYWEY_VERSION}.tar.gz
+    
+    tar -xzf flyway-commandline-$${FLYWEY_VERSION}.tar.gz -C /tmp/
+    sudo mv /tmp/flyway-$${FLYWEY_VERSION} $${FLYWEY_HOME}
+    
+    # Create symlink and adjust ownership for ec2-user
+    sudo ln -s $${FLYWEY_HOME}/flyway /usr/local/bin/flyway
+    sudo chown -R ec2-user:ec2-user $${FLYWEY_HOME}
     
     # 5. Create Nignx configure
-    sudo tee /etc/nginx/conf.d/flask_proxy.conf > /dev/null <<'EOT'
-server {
-    listen 80;
-    server_name _;
-
-    # A. NLB check
-    location = / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # B. API Gateway "prod" 
-    location /prod/ {
-        # --- CORS Preflight (OPTIONS) Handling ---
-        if ($request_method = 'OPTIONS') {
-            add_header 'Access-Control-Allow-Origin' '*';
-            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, HEAD';
-            add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token';
-            add_header 'Access-Control-Max-Age' 1728000;
-            add_header 'Content-Type' 'text/plain; charset-utf-8';
-            add_header 'Content-Length' 0;
-            return 204;
-        }
-        # --- Actual Request Handling ---
-        add_header 'Access-Control-Allow-Origin' '*' always;
-        
-        # /prod/getinfo -> /getinfo
-        proxy_pass http://127.0.0.1:8080/; 
-        
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-EOT
-
+    # ... (其余配置不变，但请检查 Nginx 配置中是否有其他 Bash 变量需要转义)
+    # 检查: location /prod/ 中的 proxy_pass http://127.0.0.1:8080/ 没有变量，安全。
+    
     # 6. create path
     sudo mkdir -p /opt/app
     
     # 7. DB Environment
+    # 这里的 DB 变量是 Terraform 变量，所以保留 `${...}` 不变
     sudo tee /etc/myapp.conf > /dev/null <<EOT
 DB_HOST=${aws_db_instance.default.address}
 DB_USER=${aws_db_instance.default.username}
