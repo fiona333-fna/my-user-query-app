@@ -53,7 +53,7 @@ def getinfo():
     userid = request.get_json().get("userid")
 
     if not userid:
-        return jsonify({"status": False, 'error': "userid is empty"})
+        return jsonify({"status": False, 'error': "没有输入用户ID"})
 
     result = fetchOne("select * from users where user_id=%s ", (userid))
     if not result:

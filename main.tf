@@ -220,7 +220,6 @@ resource "aws_instance" "web_server" {
   associate_public_ip_address = false
   key_name = "jenkins-deploy-key"
 
-  # ⭐️ FIX: Changed Nginx location from /prod/ to /
   user_data = <<-EOF
     #!/bin/bash
     set -e 
@@ -256,7 +255,7 @@ server {
     listen 80;
     server_name _;
 
-    # A. NLB check (Exact match, highest priority)
+    # NLB check
     location = / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
@@ -265,7 +264,6 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # ⭐️ FIX: B. API Gateway Traffic (Prefix match)
     # Changed from /prod/ to /
     # This will now match /getinfo
     location / {
