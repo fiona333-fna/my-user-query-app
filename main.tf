@@ -265,8 +265,7 @@ server {
     }
 
     # Changed from /prod/ to /
-    # This will now match /getinfo
-    location / {
+    location /prod/ {
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' '*';
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, HEAD';
@@ -278,7 +277,6 @@ server {
         }
         add_header 'Access-Control-Allow-Origin' '*' always;
         
-        # /getinfo -> /getinfo
         proxy_pass http://127.0.0.1:8080; 
         
         proxy_set_header Host $host;
